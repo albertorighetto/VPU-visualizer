@@ -1,0 +1,24 @@
+            - name: Pkg Action
+  # You may pin to the exact commit or the version.
+  # uses: lando/pkg-action@4bc466fb06749b06b0c7755d4311d3e357044c41
+  uses: lando/pkg-action@v5.0.0
+  with:
+    # The binary entrypoint path
+    entrypoint: bin/server.js
+    # The architecture to build for x64|amd64|aarch64|arm64
+    arch: # optional, default is ${{ runner.arch }}
+    # The config file to use
+    config: # optional, default is package.json
+    # The node version to package with
+    node-version: # optional, default is 20
+    # Additional options and flags to pass into pkg
+    options: # optional
+    # The operating system to build for win|linux|macos
+    os: # optional, default is ${{ runner.os }}
+    # The version of pkg to use
+    pkg: # optional, default is @yao-pkg/pkg@5.11.5
+    # Hidden flag for input testing
+    test: # optional
+    # Upload the artifacts. Useful if you need to grab them for downstream for things like code signing.
+    upload: # optional, default is true
+          
