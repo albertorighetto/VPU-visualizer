@@ -96,7 +96,7 @@
     <h3>Alberto Righetto 2024 - arighetto88@gmail.com</h3>
     
     <label for="ip">LivePremier Aquilon IP:</label>
-    <input id="ip" placeholder="192.168.2.140" value="127.0.0.1"><br />
+    <input id="ip" placeholder="192.168.2.140" value="192.168.2.140"><br />
 
     <label for="port">AWJ port (default 10606):</label>
     <input id="port" placeholder="10606" value="10606"><br />
@@ -140,18 +140,7 @@
             console.log(message);
             socket.emit('sendMessage', JSON.stringify(message));
         });
-/*
-        document.getElementById('getVPUUsage').addEventListener('click', () => {
-            document.getElementById('response').innerText = "";
-            let message = {};
-            message.type = 'getVPUUsage';
-            message.options = {};
-            message.options.ip = document.getElementById('ip').value;
-            message.options.port = document.getElementById('port').value;
-            console.log(message);
-            socket.emit('sendMessage', JSON.stringify(message));
-        });
-*/
+
         socket.on('message', (message) => {
             message = JSON.parse(message);
             console.log(message.title);
@@ -253,8 +242,6 @@
             });
         });
     }
-
-    //generateTable(jsonData);
 </script>
 
 <div>
@@ -264,7 +251,7 @@
     </p>
     
     <p>
-        Version 0.1
+        Version 1.0.0
     </p>
 
     <p>

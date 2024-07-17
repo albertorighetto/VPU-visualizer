@@ -209,9 +209,11 @@ io.on('connection', (socket) => {
     });
 });
 
-const PORT = 5566;
+const PORT = 15566;
 server.listen(PORT, () => {
-    console.log(`Server is running on http://localhost:${PORT}`);
+    console.log(`Server is running, open a web browser at http://localhost:${PORT}`);
+    // Open the default web browser and display the main page
+    require('child_process').exec(`start http://localhost:${PORT}`);
 });
 
 function getVPUUsage(deviceId) {
