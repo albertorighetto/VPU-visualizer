@@ -1,4 +1,0 @@
-name: Package into node binary
-uses: lando/pkg-action@v5.0.0
-with:
-  entrypoint: bin/cli
