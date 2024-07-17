@@ -162,29 +162,31 @@
 
 <script>
     function generateTable(data) {
-        //https://medialab.github.io/iwanthue/
         var colors = [
-            "#5ecee9",
-            "#e9c190",
-            "#8dc0f2",
-            "#c6d494",
-            "#b9b5f3",
-            "#aad9a7",
-            "#ddb1e5",
-            "#d0d9ae",
-            "#c0bbe4",
-            "#afd7ba",
-            "#e9afc9",
-            "#80d8db",
-            "#eaa99e",
-            "#97dacc",
-            "#dabf9f",
-            "#a3c6e7",
-            "#e2cebf",
-            "#c0c9db",
-            "#b8d3cd",
-            "#e0c7ce"
-        ];
+            '#E31F1D',
+            '#2F5295',
+            '#56AB36',
+            '#CC9999',
+            '#3499CD',
+            '#FAF19A',
+            '#CB9902',
+            '#A24B93',
+            '#99CCCC',
+            '#EA663B',
+            '#F4E500',
+            '#E6418D',
+            '#DD6D6C',
+            '#4C35C0',
+            '#5ADE8B',
+            '#8E0379',
+            '#6362A6',
+            '#C27A4E',
+            '#837D30',
+            '#AA69D8',
+            '#0BB4BA',
+            '#684B32',
+            '#808079'
+        ]
 
         const devicesTable  = document.querySelector('#jsonTable');
         while (devicesTable.firstChild) {
@@ -228,7 +230,7 @@
                         vpuTableCell.classList.add('square');
                         if(scaler.pipes[pipe]) {
                             vpuTableCell.innerHTML = "Layer " + scaler.layer + "<br>" + scaler.capability;
-                            vpuTableCell.style.backgroundColor = colors[scaler.layer%20];
+                            vpuTableCell.style.backgroundColor = colors[(scaler.layer-1)%23];
                         } else {
                             vpuTableCell.classList.add('false-cell');
                         }
