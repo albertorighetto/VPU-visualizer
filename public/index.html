@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LivePremier Aquilon VPU Visualizer by Alberto Righetto</title>
+    <style>
+        body {
+            background-color: #1b272f;
+            color: #f2f2f3;
+            font-family: OpenSans,Helvetica Neue,Arial,Helvetica,sans-serif;
+        }
+        table {
+            width: 100%;
+
+        }
+        table .vpu {
+            border: 1px dashed gray;
+        }
+        td {
+            border: 0px solid #ddd;
+            padding: 10px;
+            text-align: center;
+            color: #08141b;
+            white-space: nowrap;
+        }
+        th {
+            background-color: #08141b;
+        }
+        
+        h2.error {
+            color: #de6b1e;
+        }
+        h3 {
+            color: #90ee90;
+        }
+        .contact {
+            color: #90ee90;
+        }
+        td.square {
+            width: 10%;
+            height: 2em;
+        }
+        td.false-cell {
+            background-color: #121d24;
+            border: 1px solid white;
+            color: #121d24;
+        }
+        td .vpu_id {
+            color: white;
+            text-align: center;
+        }
+        .device-title {
+            padding: 10px;
+        }
+        .button {
+            background-color: #00ff7f;
+            color: #000000b3;
+            box-shadow: 0 2px 12px #00ff7f5e;
+            border-radius: 10px;
+            align-items: center;
+            display: inline-flex;
+            justify-content: center;
+            outline: 1px solid #0000;
+            outline-offset: -1px;
+            font-size: 14px;
+            cursor: pointer;
+            height: 4rem;
+            font-family: OpenSans, Helvetica Neue, Arial, Helvetica, sans-serif;
+            font-weight: 600;
+            line-height: 1em;
+            padding-left: 2em;
+            padding-right: 2em;
+            margin: 1em;
+        }
+        input {
+            background-color: #121d24;
+            color: white;
+            border-radius: 1em;
+            padding: 0.5em;
+            text-align: center;
+            font-weight: 600;
+            line-height: 1.5em;
+            font-size: 16px;
+            width: 8em;
+            letter-spacing: 0.05em;
+        }
+        #notes td {
+            color: gray;
+        }
+    </style>
+    <script src="/socket.io/socket.io.js"></script>
+</head>
+<body>
+    <h1>LivePremier Aquilon VPU Visualizer</h1>
+    <h3>Alberto Righetto 2024 - arighetto88@gmail.com</h3>
+    
+    <label for="ip">LivePremier Aquilon IP:</label>
+    <input id="ip" placeholder="192.168.2.140" value="127.0.0.1"><br />
+
+    <label for="port">AWJ port (default 10606):</label>
+    <input id="port" placeholder="10606" value="10606"><br />
+
+    <button id="connect" class="button">GET VPU USAGE</button>
+
+    <table id="notes">
+        <tr>
+            <th colspan="5">
+                Beta release symbol legend<br>
+                NOTE: layer numbering differs from the one you see in the web RCS
+            </th>
+        </tr>
+        <tr>
+            <td><img src="layer_dual.png" height="37px"/> this is a <img src="cap1.png" /> layer</td>
+            <td><img src="layer_dual_CF.png" height="75px"/> this is a <img src="cap1.png" /> layer with <img src="CF.png" /></td>
+
+            <td><img src="layer_4k.png" height="75px"/> this is a <img src="cap2.png" /> layer</td>
+            <td><img src="layer_4k_optimized.png" height="75px"/> this is a <img src="cap2.png" /> layer in optimized mode</td>
+            <td><img src="layer_4k_CF.png" height="150px"/> this is a <img src="cap2.png" /> layer with <img src="CF.png" /></td>
+            
+        </tr>
+    </div>
+
+    <div id="messageArea"></div>
+
+    <table id="jsonTable">
+    </table>
+    <div id="response"></div>
+
+    <script>
+        const socket = io();
+
+        document.getElementById('connect').addEventListener('click', () => {
+            document.getElementById('response').innerText = "";
+            let message = {};
+            message.type = 'connect';
+            message.options = {};
+            message.options.ip = document.getElementById('ip').value;
+            message.options.port = document.getElementById('port').value;
+            console.log(message);
+            socket.emit('sendMessage', JSON.stringify(message));
+        });
+/*
+        document.getElementById('getVPUUsage').addEventListener('click', () => {
+            document.getElementById('response').innerText = "";
+            let message = {};
+            message.type = 'getVPUUsage';
+            message.options = {};
+            message.options.ip = document.getElementById('ip').value;
+            message.options.port = document.getElementById('port').value;
+            console.log(message);
+            socket.emit('sendMessage', JSON.stringify(message));
+        });
+*/
+        socket.on('message', (message) => {
+            message = JSON.parse(message);
+            console.log(message.title);
+            let messageArea = document.getElementById('messageArea');
+            messageArea.innerHTML = "";
+            let title = document.createElement("H2");
+            title.textContent = message.title;
+            title.setAttribute("class", message.type);
+            messageArea.appendChild(title)
+            let content = document.createElement("p");
+            content.innerHTML = message.content.replace('\n', "<br/>");
+            messageArea.appendChild(content);
+        });
+
+        socket.on('receiveVPU', (message) => {
+            generateTable(message)
+        });
+    </script>
+
+<script>
+    function generateTable(data) {
+        //https://medialab.github.io/iwanthue/
+        var colors = [
+            "#5ecee9",
+            "#e9c190",
+            "#8dc0f2",
+            "#c6d494",
+            "#b9b5f3",
+            "#aad9a7",
+            "#ddb1e5",
+            "#d0d9ae",
+            "#c0bbe4",
+            "#afd7ba",
+            "#e9afc9",
+            "#80d8db",
+            "#eaa99e",
+            "#97dacc",
+            "#dabf9f",
+            "#a3c6e7",
+            "#e2cebf",
+            "#c0c9db",
+            "#b8d3cd",
+            "#e0c7ce"
+        ];
+
+        const devicesTable  = document.querySelector('#jsonTable');
+        while (devicesTable.firstChild) {
+            devicesTable.removeChild(devicesTable.firstChild);
+        }
+        
+        data = JSON.parse(data);
+        
+        let color = 0;
+
+        data.forEach(device => {
+            if(device.vpus == undefined) {
+                return;
+            }
+            const deviceHeaderRow = document.createElement('tr');
+            
+            const deviceHeaderCell = document.createElement('th');
+            deviceHeaderCell.classList.add("device-title");
+            deviceHeaderCell.innerHTML = "Device " + device.id + " - " + device.type + " - " + device.vpus + " VPU";
+            deviceHeaderRow.appendChild(deviceHeaderCell);
+            devicesTable.appendChild(deviceHeaderRow);
+            device.vpu.forEach(vpu => {
+                const deviceVpusRow = document.createElement('tr');
+                
+                const deviceVpusCell = document.createElement('td');
+                deviceVpusCell.classList.add("vpu");
+
+                const vpuTable = document.createElement('table');
+                const vpuTableId = document.createElement('tr');
+                const vpuNumberCell = document.createElement('td');
+                vpuNumberCell.classList.add("vpu_id");
+                vpuNumberCell.innerHTML = "VPU " + vpu.vpu_id;
+                vpuNumberCell.rowSpan = 9;
+                vpuTableId.appendChild(vpuNumberCell);
+                vpuTable.appendChild(vpuTableId);
+
+                vpu.scalers.forEach(scaler => {
+                    const vpuTableRow  = document.createElement('tr');
+                    for(pipe = 1; pipe <= 8; pipe++) { 
+                        const vpuTableCell = document.createElement('td');
+                        vpuTableCell.classList.add('square');
+                        if(scaler.pipes[pipe]) {
+                            vpuTableCell.innerHTML = "Layer " + scaler.layer + "<br>" + scaler.capability;
+                            vpuTableCell.style.backgroundColor = colors[scaler.layer%20];
+                        } else {
+                            vpuTableCell.classList.add('false-cell');
+                        }
+                        vpuTableRow.appendChild(vpuTableCell);
+                    }
+                    vpuTable.appendChild(vpuTableRow);
+                });
+                deviceVpusCell.appendChild(vpuTable);
+                deviceVpusRow.appendChild(deviceVpusCell);
+                devicesTable.appendChild(deviceVpusRow);
+            });
+        });
+    }
+
+    //generateTable(jsonData);
+</script>
+
+<div>
+    <p>
+        This software helps to visualize how Aquilon VPUs are organized.<br/>
+        This isn't an AnalogWay product and it's provided as-is without any guarantee.
+    </p>
+    
+    <p>
+        Version 0.1
+    </p>
+
+    <p>
+        &copy; Alberto Righetto 2024<br/>
+        Contact me: <span class="contact">arighetto88@gmail.com</span>
+    </p>
+</div>
+</body>
+</html>

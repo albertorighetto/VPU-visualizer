@@ -1,0 +1,27 @@
+{
+  "version": "1.0.0",
+  "author": "Alberto Righetto - arighetto88@gmail.com",
+  "dependencies": {
+    "express": "^4.19.2",
+    "socket.io": "^4.7.5"
+  },
+  "devDependencies": {
+    "file-loader": "^6.2.0",
+    "nodemon": "^3.1.4"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js"
+  },
+  "pkg": {
+    "assets": [
+      "public/**/*",
+      "index.html",
+      "node_modules/socket.io/client-dist/*.js"
+    ],
+    "targets": [ "node20-win-x64" ]
+  },
+  "main": "./server.js",
+  "bin": "./server.js",
+  "name": "VPU-visualizer"
+}
