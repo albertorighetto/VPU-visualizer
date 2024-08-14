@@ -186,7 +186,7 @@
         <h3>Alberto Righetto 2024 - arighetto88@gmail.com</h3>
         
         <label for="ip">LivePremier Aquilon IP</label>
-        <input id="ip" placeholder="192.168.2.140" value="192.168.3.140">
+        <input id="ip" placeholder="192.168.2.140" value="192.168.2.140">
 
         <span>&nbsp;&nbsp;&nbsp;</span>
 
@@ -441,7 +441,24 @@
         $('.progress-bar-container').hide();
         $('#notes').hide();
 
+        // Listen for clicks on GET VPU USAGE
         $('#connect').click(() => {getVpuUsageClicked();});
+
+        // Pressing enter while editing the IP address will trigget GET VPU USAGE
+        $( "#ip" ).on( "keypress", function( event ) {
+            if ( event.which == 13 ) {
+                event.preventDefault();
+                $('#connect').trigger('click');
+            }
+        });
+
+        // Pressing enter while editing the port will trigget GET VPU USAGE
+        $( "#port" ).on( "keypress", function( event ) {
+            if ( event.which == 13 ) {
+                event.preventDefault();
+                $('#connect').trigger('click');
+            }
+        });
     });
 
     function getVpuUsageClicked() {
