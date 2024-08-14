@@ -24,14 +24,14 @@ app.get('/', (req, res) => {
 var awj = null;
 
 const empty_proc = [
-    {id: 1, isEnabled: false, layer: false, capability: false, pipes: []},
-    {id: 2, isEnabled: false, layer: false, capability: false, pipes: []},
-    {id: 3, isEnabled: false, layer: false, capability: false, pipes: []},
-    {id: 4, isEnabled: false, layer: false, capability: false, pipes: []},
-    {id: 5, isEnabled: false, layer: false, capability: false, pipes: []},
-    {id: 6, isEnabled: false, layer: false, capability: false, pipes: []},
-    {id: 7, isEnabled: false, layer: false, capability: false, pipes: []},
-    {id: 8, isEnabled: false, layer: false, capability: false, pipes: []}
+    {id: 1, isEnabled: false, layer: false, realLayer: false, capability: false, screen: undefined, pipes: []},
+    {id: 2, isEnabled: false, layer: false, realLayer: false, capability: false, screen: undefined, pipes: []},
+    {id: 3, isEnabled: false, layer: false, realLayer: false, capability: false, screen: undefined, pipes: []},
+    {id: 4, isEnabled: false, layer: false, realLayer: false, capability: false, screen: undefined, pipes: []},
+    {id: 5, isEnabled: false, layer: false, realLayer: false, capability: false, screen: undefined, pipes: []},
+    {id: 6, isEnabled: false, layer: false, realLayer: false, capability: false, screen: undefined, pipes: []},
+    {id: 7, isEnabled: false, layer: false, realLayer: false, capability: false, screen: undefined, pipes: []},
+    {id: 8, isEnabled: false, layer: false, realLayer: false, capability: false, screen: undefined, pipes: []}
 ]
 
 const device_vpus = {
@@ -48,11 +48,17 @@ const device_vpus = {
 }
 
 // Regular expression to extract PROC_# and SCALER_#
-const regex_scaler = /DeviceObject\/preconfig\/resources\/new\/status\/mapping\/\$device\/@items\/([1-4])\/\$vpuLayer\/@items\/PROC_([1-4])_SCALER_([1-8])\/@props\/isEnabled/;
-const regex_pipe = /DeviceObject\/preconfig\/resources\/new\/status\/mapping\/\$device\/@items\/([1-4])\/\$vpuLayer\/@items\/PROC_([1-4])_SCALER_([1-8])\/scalerAllocation\/@props\/usedOnOutPipe([1-8])/;
-const regex_layer = /DeviceObject\/preconfig\/resources\/new\/status\/mapping\/\$device\/@items\/([1-4])\/\$vpuLayer\/@items\/PROC_([1-4])_SCALER_([1-8])\/@props\/usedInLayer/;
-const regex_capability = /DeviceObject\/preconfig\/resources\/new\/status\/mapping\/\$device\/@items\/([1-4])\/\$vpuLayer\/@items\/PROC_([1-4])_SCALER_([1-8])\/@props\/capability/;
-const regex_device_type = /DeviceObject\/system\/\$device\/@items\/([1-4])\/@props\/dev/;
+const regex_active_screens =    /DeviceObject\/preconfig\/resources\/new\/\$screen\/@items\/S([0-9]+)\/status\/@props\/mode/;
+const regex_active_layers =     /DeviceObject\/preconfig\/resources\/new\/\$screen\/@items\/S([0-9]+)\/status\/@props\/layerCount/;
+const regex_screen_optimized =  /DeviceObject\/preconfig\/resources\/new\/\$screen\/@items\/S([0-9]+)\/status\/@props\/isOptimized/;
+const regex_layer_capability =  /DeviceObject\/preconfig\/resources\/new\/\$screen\/@items\/S([0-9]+)\/\$layer\/@items\/([0-9]+)\/control\/@props\/capability/;
+const regex_layer_mask =        /DeviceObject\/preconfig\/resources\/new\/\$screen\/@items\/S([0-9]+)\/\$layer\/@items\/([0-9]+)\/status\/@props\/canUseMask/;
+const regex_scaler =            /DeviceObject\/preconfig\/resources\/new\/status\/mapping\/\$device\/@items\/([1-4])\/\$vpuLayer\/@items\/PROC_([1-4])_SCALER_([1-8])\/@props\/isEnabled/;
+const regex_pipe =              /DeviceObject\/preconfig\/resources\/new\/status\/mapping\/\$device\/@items\/([1-4])\/\$vpuLayer\/@items\/PROC_([1-4])_SCALER_([1-8])\/scalerAllocation\/@props\/usedOnOutPipe([1-8])/;
+const regex_layer =             /DeviceObject\/preconfig\/resources\/new\/status\/mapping\/\$device\/@items\/([1-4])\/\$vpuLayer\/@items\/PROC_([1-4])_SCALER_([1-8])\/@props\/usedInLayer/;
+const regex_scaler_screen =     /DeviceObject\/preconfig\/resources\/new\/status\/mapping\/\$device\/@items\/([1-4])\/\$vpuLayer\/@items\/PROC_([1-4])_SCALER_([1-8])\/@props\/usedInScreen/;
+const regex_capability =        /DeviceObject\/preconfig\/resources\/new\/status\/mapping\/\$device\/@items\/([1-4])\/\$vpuLayer\/@items\/PROC_([1-4])_SCALER_([1-8])\/@props\/capability/;
+const regex_device_type =       /DeviceObject\/system\/\$device\/@items\/([1-4])\/@props\/dev/;
 
 const empty_devices_list = [
     {id: 1, vpu: []},
@@ -61,12 +67,41 @@ const empty_devices_list = [
     {id: 4, vpu: []}
 ]
 
+const empty_screens_list = [
+    {id: 1, active: false, optimized: false, layers: []},
+    {id: 2, active: false, optimized: false, layers: []},
+    {id: 3, active: false, optimized: false, layers: []},
+    {id: 4, active: false, optimized: false, layers: []},
+    {id: 5, active: false, optimized: false, layers: []},
+    {id: 6, active: false, optimized: false, layers: []},
+    {id: 7, active: false, optimized: false, layers: []},
+    {id: 8, active: false, optimized: false, layers: []},
+    {id: 9, active: false, optimized: false, layers: []},
+    {id: 10, active: false, optimized: false, layers: []},
+    {id: 11, active: false, optimized: false, layers: []},
+    {id: 12, active: false, optimized: false, layers: []},
+    {id: 13, active: false, optimized: false, layers: []},
+    {id: 14, active: false, optimized: false, layers: []},
+    {id: 15, active: false, optimized: false, layers: []},
+    {id: 16, active: false, optimized: false, layers: []},
+    {id: 17, active: false, optimized: false, layers: []},
+    {id: 18, active: false, optimized: false, layers: []},
+    {id: 19, active: false, optimized: false, layers: []},
+    {id: 20, active: false, optimized: false, layers: []},
+    {id: 21, active: false, optimized: false, layers: []},
+    {id: 22, active: false, optimized: false, layers: []},
+    {id: 23, active: false, optimized: false, layers: []},
+    {id: 24, active: false, optimized: false, layers: []}
+]
+
 var devices;
+var screens;
 
 function connectAWJ() {
     awj = new net.Socket();
 
     devices = JSON.parse(JSON.stringify(empty_devices_list));
+    screens = JSON.parse(JSON.stringify(empty_screens_list));
 
     console.log(`Connecting to ${tcp_ip} on port ${tcp_port}`);
 
@@ -74,12 +109,29 @@ function connectAWJ() {
         console.log('Connected to TCP server');
         io.emit("message", JSON.stringify({"type": "info", "title": "Connected", "content": ""}));
 
-        io.emit("message", JSON.stringify({"type": "info", "title": "Connected", "content": "Getting device list"}));
-        // Get connected devices
-        for(device = 1; device <= 4; device++) {
-            message = `{"op":"get","path":"DeviceObject/system/$device/@items/${device}/@props/dev"}`;
+        
+        // First we get enabled screens and their data
+        for(let screen = 1; screen <= 24; screen++) {
+            message = `{"op":"get","path":"DeviceObject/preconfig/resources/new/\$screen/@items/S${screen}/status/@props/mode"}`
             awj.write(message + eotChar);
         }
+
+        setTimeout(function() {
+            // Then we get connected devices and their data
+            // TODO: ensure this part is executed AFTER we got all screen info (particulary the layer allocation as we need it to evaluate the "real layer" from the "vpu layer")
+            io.emit("message", JSON.stringify({"type": "info", "title": "Connected", "content": "Getting device list"}));
+            for(let device = 1; device <= 4; device++) {
+                message = `{"op":"get","path":"DeviceObject/system/$device/@items/${device}/@props/dev"}`;
+                awj.write(message + eotChar);
+            }
+        }, 1000);
+
+        setTimeout(function() {
+            io.emit('receiveScreens', JSON.stringify(screens));
+        }, 2000);
+        setTimeout(function() {
+            io.emit('receiveVPU', JSON.stringify(devices));
+        }, 2500);
     });
 
     awj.on('data', (data) => {
@@ -112,20 +164,95 @@ function connectAWJ() {
 
             
             
-
+            const match_active_screens = jsonObject.path.match(regex_active_screens);
+            const match_active_layers = jsonObject.path.match(regex_active_layers);
+            const match_screen_optimized = jsonObject.path.match(regex_screen_optimized);
+            const match_layer_capability = jsonObject.path.match(regex_layer_capability);
+            const match_layer_mask = jsonObject.path.match(regex_layer_mask);
             const match_scaler = jsonObject.path.match(regex_scaler);
+            const match_scaler_screen = jsonObject.path.match(regex_scaler_screen);
             const match_pipe = jsonObject.path.match(regex_pipe);
             const match_layer = jsonObject.path.match(regex_layer);
             const match_capability = jsonObject.path.match(regex_capability);
             
-
-            if (match_scaler) {
+            //
+            // THE FOLLOWING SHOULD BE THE FIRST MESSAGES TO BE REPLIED BY THE AQUILON
+            // Here we are getting the screens settings (active, layers, optimized...)
+            //
+            if (match_active_screens) {
+                const screenId = match_active_screens[1];
+                let screen = screens.find(s => s.id == screenId);
+                screen.active = jsonObject.value != 'DISABLED';
+                // If screen is active, get additional indo
+                if(screen.active) {
+                    // Get active layer count
+                    message = `{"op":"get","path":"DeviceObject/preconfig/resources/new/\$screen/@items/S${screenId}/status/@props/layerCount"}`
+                    awj.write(message + eotChar);
+                    // Get optimized status
+                    message = `{"op":"get","path":"DeviceObject/preconfig/resources/new/$screen/@items/S${screenId}/status/@props/isOptimized"}`
+                    awj.write(message + eotChar);
+                }
+            } else if(match_screen_optimized) {
+                const screenId = match_screen_optimized[1];
+                let screen = screens.find(s => s.id == screenId);
+                screen.optimized = jsonObject.value;
+            } else if (match_active_layers) {
+                const screenId = match_active_layers[1];
+                let screen = screens.find(s => s.id == screenId);
+                const active_layers = jsonObject.value;
+                /*let newArr = []
+                for(let id = 1; id <= active_layers; id++) {
+                    newArr.push({id: id, capability: undefined, mask: false})
+                }*/
+                screen.layers = [];
+                for(let layer = 1; layer <= active_layers; layer++) {
+                    screen.layers.push({id: layer, capability: undefined, mask: false})
+                    // Get layer capacity
+                    message = `{"op":"get","path":"DeviceObject/preconfig/resources/new/$screen/@items/S${screenId}/$layer/@items/${layer}/control/@props/capability"}`
+                    awj.write(message + eotChar);
+                    // Get layer masking active
+                    message = `{"op":"get","path":"DeviceObject/preconfig/resources/new/$screen/@items/S${screenId}/$layer/@items/${layer}/status/@props/canUseMask"}`
+                    awj.write(message + eotChar);
+                }
+            } else if(match_layer_capability) {
+                const screenId = match_layer_capability[1];
+                let screen = screens.find(s => s.id == screenId);
+                const layerId = match_layer_capability[2];
+                let layer = screen.layers.find(l => l.id == layerId);
+                layer.capability = jsonObject.value;
+            } else if(match_layer_mask) {
+                const screenId = match_layer_mask[1];
+                let screen = screens.find(s => s.id == screenId);
+                const layerId = match_layer_mask[2];
+                let layer = screen.layers.find(l => l.id == layerId);
+                layer.mask = jsonObject.value;
+                //console.log(screen)
+            } 
+            //
+            // FROM HERE IT DOESN'T MATTER IN WHICH ORDER THE MESSAGES ARRIVE
+            // this is because we already have the array of screens, layers, capabilities and masking
+            // and from the data we have we can calculate the real layer
+            //
+            else if (match_scaler) {
                 const deviceId = match_scaler[1];
                 let device = devices.find(d => d.id == deviceId);
                 const proc = match_scaler[2]; // PROC_#
                 const scaler = match_scaler[3]; // SCALER_#
                 let vpu = getVpu(device, proc);
-                vpu.scalers[scaler-1].isEnabled = jsonObject.value;
+                let isEnabled = jsonObject.value;
+                vpu.scalers[scaler-1].isEnabled = isEnabled;
+                if(isEnabled) {
+                    // Get which screen is processed by this scaler
+                    message = `{"op":"get","path":"DeviceObject/preconfig/resources/new/status/mapping/$device/@items/${deviceId}/$vpuLayer/@items/PROC_${proc}_SCALER_${scaler}/@props/usedInScreen"}`
+                    awj.write(message + eotChar);
+                }
+            } else if(match_scaler_screen) {
+                const deviceId = match_scaler_screen[1];
+                let device = devices.find(d => d.id == deviceId);
+                const proc = match_scaler_screen[2]; // PROC_#
+                const scaler = match_scaler_screen[3]; // SCALER_#
+                let vpu = getVpu(device, proc);
+                vpu.scalers[scaler-1].screen = jsonObject.value.substring(1); // The value is "S#", we remove the initial S from the screen number
             } else if (match_pipe) {
                 const deviceId = match_pipe[1];
                 let device = devices.find(d => d.id == deviceId);
@@ -133,7 +260,7 @@ function connectAWJ() {
                 const scaler = match_pipe[3]; // SCALER_#
                 const pipe = match_pipe[4]; // PIPE_#
                 let vpu = getVpu(device, proc);
-                vpu.scalers[scaler-1].pipes[pipe] = jsonObject.value != 'NONE';
+                vpu.scalers[scaler-1].pipes[pipe] = jsonObject.value;// != 'NONE';
             } else if (match_layer) {
                 const deviceId = match_layer[1];
                 let device = devices.find(d => d.id == deviceId);
@@ -158,7 +285,7 @@ function connectAWJ() {
                 //console.log("No match found.");
             }
         });
-        io.emit('receiveVPU', JSON.stringify(devices));
+        
         //console.log(devices)
     });
 

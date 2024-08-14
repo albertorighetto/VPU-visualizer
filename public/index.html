@@ -18,6 +18,10 @@
         }
         h3 {
             color: #90ee90;
+            font-size: larger;
+        }
+        a {
+            color: #90ee90;
         }
         .contact {
             color: #90ee90;
@@ -34,7 +38,7 @@
             outline-offset: -1px;
             font-size: 14px;
             cursor: pointer;
-            height: 4rem;
+            height: 3rem;
             font-family: OpenSans, Helvetica Neue, Arial, Helvetica, sans-serif;
             font-weight: 600;
             line-height: 1em;
@@ -51,39 +55,24 @@
             font-weight: 600;
             line-height: 1.5em;
             font-size: 16px;
-            width: 8em;
+            width: 10em;
             letter-spacing: 0.05em;
         }
+        input#port {
+            width: 6em;
+        }
         
         
-        
-        #notes div {
-            display: flex;
-			gap: 5px 10px;
-            flex-wrap: wrap; /* Allows wrapping to new line */
-            justify-content: space-around; /* Distributes space between tables */
-            display: flex;
-			padding: 0px;
-            align-items: center;
+        #header {
+            text-align: center;
         }
 
-        #notes .symbol-legend div {
-            border-radius: 20px;
-            border-color: #121d24;
-            background-color: #121D24;
-            color: #FFFFFF;
-            padding: 20px;
-            border-radius: 10px;
+        #footer {
+            text-align: center;
         }
 
         #notes {
-            height: 200px;
-            transition: height 1s ease, opacity 1s ease;
-        }
-
-        #notes.collapsed {
-            height: 0px;
-            opacity: 0;
+            text-align: center;
         }
 
         .button-legend {
@@ -152,38 +141,69 @@
             font-size: larger;
         }
 
-        
+        .demo-container {
+            width: 300px;
+            margin: auto;
+        }
+
+        .progress-bar {
+            height: 4px;
+            background-color: rgba(5, 114, 206, 0.2);
+            width: 100%;
+            overflow: hidden;
+        }
+
+        .progress-bar-value {
+            width: 100%;
+            height: 100%;
+            background-color: #00ff7f;
+            animation: indeterminateAnimation 1s infinite linear;
+            transform-origin: 0% 50%;
+        }
+
+        @keyframes indeterminateAnimation {
+            0% {
+                transform:  translateX(0) scaleX(0);
+            }
+            40% {
+                transform:  translateX(0) scaleX(0.4);
+            }
+            100% {
+                transform:  translateX(100%) scaleX(0.5);
+            }
+        }
     </style>
     <script src="/socket.io/socket.io.js"></script>
 </head>
 <body>
-    <div>
+    <div id="header">
         <h1>LivePremier Aquilon VPU Visualizer</h1>
         <h3>Alberto Righetto 2024 - arighetto88@gmail.com</h3>
         
-        <label for="ip">LivePremier Aquilon IP:</label>
-        <input id="ip" placeholder="192.168.2.140" value="127.0.0.1"><br />
+        <label for="ip">LivePremier Aquilon IP</label>
+        <input id="ip" placeholder="192.168.2.140" value="192.168.2.140">
 
-        <label for="port">AWJ port (default 10606):</label>
-        <input id="port" placeholder="10606" value="10606"><br />
+        <span>&nbsp;&nbsp;&nbsp;</span>
+
+        <label for="port">AWJ port (10606)</label>
+        <input id="port" placeholder="10606" value="10606">
+
+        <span>&nbsp;&nbsp;&nbsp;</span>
 
         <button id="connect" class="button">GET VPU USAGE</button>
-        <button id="show-legend" class="button button-legend">SHOW LEGEND</button>
+        
+        <div class="progress-bar-container">
+            <div class="progress-bar">
+              <div class="progress-bar-value"></div>
+            </div>
+          </div>
+        <!--<button id="show-legend" class="button button-legend">SHOW LEGEND</button>-->
     </div>
 
     <div id="notes">
         <div class="notes-header">
-            NOTE: layer numbering differs from the one you see in the web RCS
-        </div>
-        <div class="symbol-legend">
-            <div><img src="layer_dual.png" /> = <img src="cap1.png" /></div>
-            <div><img src="layer_dual_CF.png" /> = <img src="cap1.png" /> <img src="CF.png" /></div>
-
-            <div><img src="layer_4k.png" /> = <img src="cap2.png" /></div>
-            <div><img src="layer_4k_CF.png" height="150px" /> = <img src="cap2.png" /> <img src="CF.png" /></div>
-
-            <div><img src="layer_4k_optimized.png" height="75px"/> = <img src="cap2.png" /> <img src="optimized.png" /></div>
-            <div><img src="layer_4k_CF_optimized.png" height="150px"/> = <img src="cap2.png" /> <img src="CF.png" /> <img src="optimized.png" /></div>
+            What does "pipe" means? A pipe is an "output link" used by a screen. Outputs cap 1 use 1 pipe, cap 2 use 2 pipes. Easy.<br />
+            Each screen has its own pipes. A screen with 5x outputs cap 2 uses 10 pipes.
         </div>
     </div>
 
@@ -194,31 +214,39 @@
 
     <script>
         const socket = io();
+        let screens;
 
         document.getElementById('connect').addEventListener('click', () => {
+            $('.progress-bar-container').show();
+            $('#notes').hide();
+            //$('#progress-bar').val(100);
+            $("#vpus").empty(); // Clean previous table
+
             let message = {};
             message.type = 'connect';
             message.options = {};
             message.options.ip = document.getElementById('ip').value;
             message.options.port = document.getElementById('port').value;
-            console.log(message);
+            //console.log(message);
             socket.emit('sendMessage', JSON.stringify(message));
             const notes = document.getElementById('notes');
-            notes.classList.add('collapsed');
-            document.getElementById('show-legend').classList.add('visible');
+            //notes.classList.add('collapsed');
+            //document.getElementById('show-legend').classList.add('visible');           
         });
 
-        document.getElementById('show-legend').addEventListener('click', () => {
+        /*document.getElementById('show-legend').addEventListener('click', () => {
             notes.classList.remove('collapsed');
             document.getElementById('show-legend').classList.toggle('visible');
-        });
+        });*/
 
         socket.on('message', (message) => {
             message = JSON.parse(message);
-            console.log(message.title);
+            //console.log(message.title);
             let messageArea = document.getElementById('messageArea');
             messageArea.innerHTML = "";
             if(message.type == "error") {
+                $(".progress-bar-container").hide()
+                $("#notes").hide()
                 let title = document.createElement("H2");
                 title.textContent = message.title;
                 title.setAttribute("class", message.type);
@@ -230,8 +258,44 @@
         });
 
         socket.on('receiveVPU', (message) => {
+            //console.log("RECV VPU: " + message)
             generateTable(message)
+            $('.progress-bar-container').hide();
+            $('#notes').show();
+            //console.log(message)
         });
+
+        socket.on('receiveScreens', (message) => {
+            screens = JSON.parse(message);
+            //console.log("RECV SCREENS: "+JSON.stringify(screens));
+        });
+
+        function getRealLayer(screenId, vpuLayer) {
+            let screen = screens.find(s => s.id == screenId);
+            startScaler = 0;
+            endScaler = 0;
+            let realLayer = "-";
+            if(screens != undefined) {
+                screen.layers.forEach(layer => {
+                    startScaler = endScaler;
+                    // DUAL consumes always 1 "vpu layer" (optimized or non-optimized)
+                    // 4K consumes 1 "vpu layer" if optimized
+                    let scalersUsed = 1; // all DUAL layers + the 4K only if optimized
+                    if(layer.capability == '4K' && !screen.optimized) {
+                        scalersUsed = 2;
+                    }
+                    // "vpu layers" used doubles when cut&fill masking is active
+                    if(layer.mask) {
+                        scalersUsed*= 2;
+                    }
+                    endScaler = startScaler + scalersUsed;
+                    if(vpuLayer > startScaler && vpuLayer <= endScaler) {
+                        realLayer = layer.id;
+                    }
+                });
+            }
+            return realLayer;
+        }
 
         function generateTable(data) {
             var colors = [
@@ -260,14 +324,36 @@
                 '#808079'
             ]
 
-            const devicesTable  = document.querySelector('#vpus');
-            while (devicesTable.firstChild) {
-                // Clean previous table
-                devicesTable.removeChild(devicesTable.firstChild);
-            }
-            
+            var text_colors = [
+                'white',
+                'white',
+                'black',
+                'black',
+                'black',
+                'black',
+                'black',
+                'white',
+                'black',
+                'black',
+                'black',
+                'white',
+                'black',
+                'white',
+                'black',
+                'white',
+                'white',
+                'black',
+                'white',
+                'black',
+                'black',
+                'white',
+                'white',
+                'white'
+            ]
+
             data = JSON.parse(data);
-            
+            const devicesTable  = document.querySelector('#vpus');
+
             let color = 0;
 
             data.forEach(device => {
@@ -296,9 +382,11 @@
                         const vpuTableRow  = document.createElement('tr');
                         for(pipe = 1; pipe <= 8; pipe++) { 
                             const vpuTableCell = document.createElement('td');
-                            if(scaler.pipes[pipe]) {
-                                vpuTableCell.innerHTML = "Layer " + scaler.layer + "<br>" + scaler.capability;
-                                vpuTableCell.style.backgroundColor = colors[(scaler.layer-1)%23];
+                            if(scaler.pipes[pipe] != 'NONE') {
+                                let realLayer = getRealLayer(scaler.screen, scaler.layer);
+                                vpuTableCell.innerHTML = "S" + scaler.screen + "&#9656;L" + realLayer + "<br><small>PIPE " + scaler.pipes[pipe] + "</small>";
+                                vpuTableCell.style.backgroundColor = colors[(realLayer-1)%23];
+                                vpuTableCell.style.color = text_colors[(realLayer-1)%23];
                             } else {
                                 vpuTableCell.innerHTML = "&nbsp;<br>&nbsp;";
                             }
@@ -319,7 +407,10 @@
     </p>
     
     <p>
-        Version 1.0.1
+        Version 1.0.2
+    </p>
+    <p>
+        <a href="https://github.com/albertorighetto/VPU-visualizer/releases" target="_blank">Check for updates</a>
     </p>
 
     <p>
@@ -330,8 +421,12 @@
 
 <!-- Bootstrap JS and dependencies -->
 <script src="jquery.js"></script>
-<script src="popper.js"></script>
-<script src="bootstrap.js"></script>
+<script>
+    $(document).ready(function() {
+        $('.progress-bar-container').hide();
+        $('#notes').hide();
+    });
+</script>
 
 </body>
 </html>
