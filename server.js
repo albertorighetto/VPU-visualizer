@@ -5,6 +5,7 @@ const net = require('net');
 const { match } = require('assert');
 const { exit } = require('process');
 const path = require('path');
+const { isErrored } = require('stream');
 
 const app = express();
 const server = http.createServer(app);
@@ -24,14 +25,14 @@ app.get('/', (req, res) => {
 var awj = null;
 
 const empty_proc = [
-    {id: 1, isEnabled: false, layer: false, realLayer: false, capability: false, screen: undefined, pipes: []},
-    {id: 2, isEnabled: false, layer: false, realLayer: false, capability: false, screen: undefined, pipes: []},
-    {id: 3, isEnabled: false, layer: false, realLayer: false, capability: false, screen: undefined, pipes: []},
-    {id: 4, isEnabled: false, layer: false, realLayer: false, capability: false, screen: undefined, pipes: []},
-    {id: 5, isEnabled: false, layer: false, realLayer: false, capability: false, screen: undefined, pipes: []},
-    {id: 6, isEnabled: false, layer: false, realLayer: false, capability: false, screen: undefined, pipes: []},
-    {id: 7, isEnabled: false, layer: false, realLayer: false, capability: false, screen: undefined, pipes: []},
-    {id: 8, isEnabled: false, layer: false, realLayer: false, capability: false, screen: undefined, pipes: []}
+    {id: 1, isEnabled: false, layer: false, capability: false, screen: undefined, pipes: []},
+    {id: 2, isEnabled: false, layer: false, capability: false, screen: undefined, pipes: []},
+    {id: 3, isEnabled: false, layer: false, capability: false, screen: undefined, pipes: []},
+    {id: 4, isEnabled: false, layer: false, capability: false, screen: undefined, pipes: []},
+    {id: 5, isEnabled: false, layer: false, capability: false, screen: undefined, pipes: []},
+    {id: 6, isEnabled: false, layer: false, capability: false, screen: undefined, pipes: []},
+    {id: 7, isEnabled: false, layer: false, capability: false, screen: undefined, pipes: []},
+    {id: 8, isEnabled: false, layer: false, capability: false, screen: undefined, pipes: []}
 ]
 
 const device_vpus = {
@@ -118,20 +119,13 @@ function connectAWJ() {
 
         setTimeout(function() {
             // Then we get connected devices and their data
-            // TODO: ensure this part is executed AFTER we got all screen info (particulary the layer allocation as we need it to evaluate the "real layer" from the "vpu layer")
+            // TODO: ensure this part is executed AFTER we got all screen info
             io.emit("message", JSON.stringify({"type": "info", "title": "Connected", "content": "Getting device list"}));
             for(let device = 1; device <= 4; device++) {
                 message = `{"op":"get","path":"DeviceObject/system/$device/@items/${device}/@props/dev"}`;
                 awj.write(message + eotChar);
             }
-        }, 1000);
-
-        setTimeout(function() {
-            io.emit('receiveScreens', JSON.stringify(screens));
-        }, 2000);
-        setTimeout(function() {
-            io.emit('receiveVPU', JSON.stringify(devices));
-        }, 2500);
+        }, 0);
     });
 
     awj.on('data', (data) => {
@@ -231,7 +225,6 @@ function connectAWJ() {
             //
             // FROM HERE IT DOESN'T MATTER IN WHICH ORDER THE MESSAGES ARRIVE
             // this is because we already have the array of screens, layers, capabilities and masking
-            // and from the data we have we can calculate the real layer
             //
             else if (match_scaler) {
                 const deviceId = match_scaler[1];
@@ -285,8 +278,7 @@ function connectAWJ() {
                 //console.log("No match found.");
             }
         });
-        
-        //console.log(devices)
+        checkAndSendData();
     });
 
     awj.on('close', () => {
@@ -328,6 +320,13 @@ io.on('connection', (socket) => {
                 console.log("Invalid host/IP or TCP port number");
                 io.emit("message", JSON.stringify({"type": "error", "title": "Wrong settings", "content": "Host/IP and port are not valid"}));
             }
+        } else if(message.type == "recheck") {
+            // Get which screen is processed by this scaler
+            let awjMessage = `{"op":"get","path":"DeviceObject/preconfig/resources/new/status/mapping/\$device/@items/${message.options.deviceId}/\$vpuLayer/@items/PROC_${message.options.procId}_SCALER_${message.options.scalerId}/@props/usedInScreen"}`
+            awj.write(awjMessage + eotChar);
+            awjMessage = `{"op":"get","path":"DeviceObject/preconfig/resources/new/status/mapping/\$device/@items/${message.options.deviceId}/\$vpuLayer/@items/PROC_${message.options.procId}_SCALER_${message.options.scalerId}/scalerAllocation/@props/usedOnOutPipe${message.options.pipeId}"}`;
+            awj.write(awjMessage + eotChar);
+            //console.log("RECHECKING: " + JSON.stringify(awjMessage))
         }
     });
 
@@ -373,4 +372,53 @@ function getVpu(device, vpu_id) {
         });
     }
     return device.vpu.find(v => v.vpu_id == vpu_id);
+}
+
+function checkAndSendData() {
+    /*
+    let errorCounter = 0;
+    // Validate screens
+    //console.log(screens);
+
+    // Validate VPUs 
+    //console.log(devices)
+    if(!devices) {
+        //console.error("MISSING DEVICES")
+        return;
+    }
+    devices.forEach(device => {
+        if(device.vpu.length != device.vpus) {
+            //console.error("MISSING VPU DATA")
+            return;
+        }
+    
+        console.log("VPU OK")
+        device.vpu.forEach(vpu => {
+            vpu.scalers.forEach(scaler => {
+                if(typeof scaler.isEnabled != 'boolean') {
+                    // Error missing scaler enabled
+                    errorCounter++;
+                }
+                if(typeof scaler.layer != 'number') {
+                    // Error missing layer number
+                    errorCounter++;
+                }
+                if(typeof scaler.capability != 'string') {
+                    // Error missing layer capability
+                    errorCounter++;
+                }
+                scaler.pipes.forEach(pipe => {
+                    if(parseInt(pipe) == NaN && pipe != 'NONE') {
+                        console.log(pipe)
+                        // Error missing pipe data
+                        errorCounter++;
+                    }
+                })
+            })
+        });
+    });
+    console.log(errorCounter)
+    */
+    io.emit('receiveScreens', JSON.stringify(screens));
+    io.emit('receiveVPU', JSON.stringify(devices));
 }

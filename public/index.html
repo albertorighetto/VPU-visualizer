@@ -71,6 +71,10 @@
             text-align: center;
         }
 
+        #messageArea {
+            text-align: center;
+        }
+
         #notes {
             text-align: center;
         }
@@ -150,6 +154,7 @@
             height: 4px;
             background-color: rgba(5, 114, 206, 0.2);
             width: 100%;
+            margin: 3rem;
             overflow: hidden;
         }
 
@@ -181,7 +186,7 @@
         <h3>Alberto Righetto 2024 - arighetto88@gmail.com</h3>
         
         <label for="ip">LivePremier Aquilon IP</label>
-        <input id="ip" placeholder="192.168.2.140" value="192.168.2.140">
+        <input id="ip" placeholder="192.168.2.140" value="192.168.3.140">
 
         <span>&nbsp;&nbsp;&nbsp;</span>
 
@@ -191,19 +196,18 @@
         <span>&nbsp;&nbsp;&nbsp;</span>
 
         <button id="connect" class="button">GET VPU USAGE</button>
-        
-        <div class="progress-bar-container">
-            <div class="progress-bar">
-              <div class="progress-bar-value"></div>
-            </div>
-          </div>
-        <!--<button id="show-legend" class="button button-legend">SHOW LEGEND</button>-->
     </div>
 
     <div id="notes">
         <div class="notes-header">
             What does "pipe" means? A pipe is an "output link" used by a screen. Outputs cap 1 use 1 pipe, cap 2 use 2 pipes. Easy.<br />
             Each screen has its own pipes. A screen with 5x outputs cap 2 uses 10 pipes.
+        </div>
+    </div>
+
+    <div class="progress-bar-container">
+        <div class="progress-bar">
+            <div class="progress-bar-value"></div>
         </div>
     </div>
 
@@ -215,24 +219,21 @@
     <script>
         const socket = io();
         let screens;
+        var timer = null;
 
-        document.getElementById('connect').addEventListener('click', () => {
-            $('.progress-bar-container').show();
-            $('#notes').hide();
-            //$('#progress-bar').val(100);
-            $("#vpus").empty(); // Clean previous table
 
+
+        function recheck(deviceId, vpuId, scalerId, pipeId) {
             let message = {};
-            message.type = 'connect';
+            message.type = 'recheck';
             message.options = {};
-            message.options.ip = document.getElementById('ip').value;
-            message.options.port = document.getElementById('port').value;
+            message.options.deviceId = deviceId;
+            message.options.procId = vpuId;
+            message.options.scalerId = scalerId;
+            message.options.pipeId = pipeId;
             //console.log(message);
             socket.emit('sendMessage', JSON.stringify(message));
-            const notes = document.getElementById('notes');
-            //notes.classList.add('collapsed');
-            //document.getElementById('show-legend').classList.add('visible');           
-        });
+        }
 
         /*document.getElementById('show-legend').addEventListener('click', () => {
             notes.classList.remove('collapsed');
@@ -258,9 +259,14 @@
         });
 
         socket.on('receiveVPU', (message) => {
-            //console.log("RECV VPU: " + message)
-            generateTable(message)
-            $('.progress-bar-container').hide();
+            
+            if (timer != null) {
+                clearTimeout(timer); //cancel the previous timer.
+                timer = null;
+            }
+            timer = setTimeout(() => {generateTable(message)}, 1000);
+            
+            //$('.progress-bar-container').hide();
             $('#notes').show();
             //console.log(message)
         });
@@ -274,8 +280,8 @@
             let screen = screens.find(s => s.id == screenId);
             startScaler = 0;
             endScaler = 0;
-            let realLayer = "-";
-            if(screens != undefined) {
+            let realLayer = "";
+            if(screen != undefined && screen.layers != undefined) {
                 screen.layers.forEach(layer => {
                     startScaler = endScaler;
                     // DUAL consumes always 1 "vpu layer" (optimized or non-optimized)
@@ -298,6 +304,8 @@
         }
 
         function generateTable(data) {
+            $('.progress-bar-container').hide();
+            $("#vpus").empty(); // Clean previous table
             var colors = [
                 '#E31F1D',
                 '#2F5295',
@@ -384,9 +392,14 @@
                             const vpuTableCell = document.createElement('td');
                             if(scaler.pipes[pipe] != 'NONE') {
                                 let realLayer = getRealLayer(scaler.screen, scaler.layer);
-                                vpuTableCell.innerHTML = "S" + scaler.screen + "&#9656;L" + realLayer + "<br><small>PIPE " + scaler.pipes[pipe] + "</small>";
-                                vpuTableCell.style.backgroundColor = colors[(realLayer-1)%23];
-                                vpuTableCell.style.color = text_colors[(realLayer-1)%23];
+                                if(scaler.screen == undefined || typeof realLayer != 'number' || scaler.pipes[pipe] == null || parseInt(scaler.layer) == NaN) {
+                                    recheck(device.id, vpu.vpu_id, scaler.id, pipe);
+                                } else {
+                                    let realLayer = getRealLayer(scaler.screen, scaler.layer);
+                                    vpuTableCell.innerHTML = "S" + scaler.screen + "&#9656;L" + realLayer + "<br><small>PIPE " + scaler.pipes[pipe] +"</small>";
+                                    vpuTableCell.style.backgroundColor = colors[(realLayer-1)%23];
+                                    vpuTableCell.style.color = text_colors[(realLayer-1)%23];
+                                }
                             } else {
                                 vpuTableCell.innerHTML = "&nbsp;<br>&nbsp;";
                             }
@@ -422,10 +435,27 @@
 <!-- Bootstrap JS and dependencies -->
 <script src="jquery.js"></script>
 <script>
+    let getVpuUsageTimer = null;
+
     $(document).ready(function() {
         $('.progress-bar-container').hide();
         $('#notes').hide();
+
+        $('#connect').click(() => {getVpuUsageClicked();});
     });
+
+    function getVpuUsageClicked() {
+        $('#connect').off();
+        $('.progress-bar-container').show();
+        $("#vpus").empty(); // Clean previous table
+        let message = {};
+        message.type = 'connect';
+        message.options = {};
+        message.options.ip = document.getElementById('ip').value;
+        message.options.port = document.getElementById('port').value;
+        socket.emit('sendMessage', JSON.stringify(message));
+        setTimeout(() => {$('#connect').click(() => {getVpuUsageClicked();});}, 1000)
+    }
 </script>
 
 </body>
