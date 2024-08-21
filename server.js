@@ -52,7 +52,8 @@ const device_vpus = {
 const regex_active_screens =    /DeviceObject\/preconfig\/resources\/new\/\$screen\/@items\/S([0-9]+)\/status\/@props\/mode/;
 const regex_active_layers =     /DeviceObject\/preconfig\/resources\/new\/\$screen\/@items\/S([0-9]+)\/status\/@props\/layerCount/;
 const regex_screen_optimized =  /DeviceObject\/preconfig\/resources\/new\/\$screen\/@items\/S([0-9]+)\/status\/@props\/isOptimized/;
-const regex_layer_capability =  /DeviceObject\/preconfig\/resources\/new\/\$screen\/@items\/S([0-9]+)\/\$layer\/@items\/([0-9]+)\/control\/@props\/capability/;
+const regex_layer_capability =  /DeviceObject\/preconfig\/resources\/new\/\$screen\/@items\/S([0-9]+)\/\$layer\/@items\/([0-9]+)\/status\/@props\/capability/;
+const regex_layer_regions =     /DeviceObject\/preconfig\/resources\/new\/\$screen\/@items\/S([0-9]+)\/\$layer\/@items\/([0-9]+)\/status\/@props\/usedInRegions/;
 const regex_layer_mask =        /DeviceObject\/preconfig\/resources\/new\/\$screen\/@items\/S([0-9]+)\/\$layer\/@items\/([0-9]+)\/status\/@props\/canUseMask/;
 const regex_scaler =            /DeviceObject\/preconfig\/resources\/new\/status\/mapping\/\$device\/@items\/([1-4])\/\$vpuLayer\/@items\/PROC_([1-4])_SCALER_([1-8])\/@props\/isEnabled/;
 const regex_pipe =              /DeviceObject\/preconfig\/resources\/new\/status\/mapping\/\$device\/@items\/([1-4])\/\$vpuLayer\/@items\/PROC_([1-4])_SCALER_([1-8])\/scalerAllocation\/@props\/usedOnOutPipe([1-8])/;
@@ -162,6 +163,7 @@ function connectAWJ() {
             const match_active_layers = jsonObject.path.match(regex_active_layers);
             const match_screen_optimized = jsonObject.path.match(regex_screen_optimized);
             const match_layer_capability = jsonObject.path.match(regex_layer_capability);
+            const match_layer_regions = jsonObject.path.match(regex_layer_regions);
             const match_layer_mask = jsonObject.path.match(regex_layer_mask);
             const match_scaler = jsonObject.path.match(regex_scaler);
             const match_scaler_screen = jsonObject.path.match(regex_scaler_screen);
@@ -200,9 +202,12 @@ function connectAWJ() {
                 }*/
                 screen.layers = [];
                 for(let layer = 1; layer <= active_layers; layer++) {
-                    screen.layers.push({id: layer, capability: undefined, mask: false})
+                    screen.layers.push({id: layer, capability: undefined, regions: [], mask: false})
                     // Get layer capacity
-                    message = `{"op":"get","path":"DeviceObject/preconfig/resources/new/$screen/@items/S${screenId}/$layer/@items/${layer}/control/@props/capability"}`
+                    message = `{"op":"get","path":"DeviceObject/preconfig/resources/new/$screen/@items/S${screenId}/$layer/@items/${layer}/status/@props/capability"}`
+                    awj.write(message + eotChar);
+                    // Get layer regions
+                    message = `{"op":"get","path":"DeviceObject/preconfig/resources/new/$screen/@items/S${screenId}/$layer/@items/${layer}/status/@props/usedInRegions"}`
                     awj.write(message + eotChar);
                     // Get layer masking active
                     message = `{"op":"get","path":"DeviceObject/preconfig/resources/new/$screen/@items/S${screenId}/$layer/@items/${layer}/status/@props/canUseMask"}`
@@ -214,13 +219,20 @@ function connectAWJ() {
                 const layerId = match_layer_capability[2];
                 let layer = screen.layers.find(l => l.id == layerId);
                 layer.capability = jsonObject.value;
+            } else if(match_layer_regions) {
+                const screenId = match_layer_regions[1];
+                let screen = screens.find(s => s.id == screenId);
+                const layerId = match_layer_regions[2];
+                let layer = screen.layers.find(l => l.id == layerId);
+                layer.regions = jsonObject.value;
+                console.log(layer)
+                
             } else if(match_layer_mask) {
                 const screenId = match_layer_mask[1];
                 let screen = screens.find(s => s.id == screenId);
                 const layerId = match_layer_mask[2];
                 let layer = screen.layers.find(l => l.id == layerId);
                 layer.mask = jsonObject.value;
-                //console.log(screen)
             } 
             //
             // FROM HERE IT DOESN'T MATTER IN WHICH ORDER THE MESSAGES ARRIVE

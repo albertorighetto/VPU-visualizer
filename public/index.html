@@ -1,6 +1,10 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <!--
+    Thanks for looking at the code!
+    This is surely not the best code in the word, I just needed it to work properly ;-)
+    -->
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>LivePremier Aquilon VPU Visualizer by Alberto Righetto</title>
@@ -74,11 +78,9 @@
         #messageArea {
             text-align: center;
         }
-
         #notes {
             text-align: center;
         }
-
         .button-legend {
             opacity: 0;
             transition: opacity 0.5s;
@@ -86,8 +88,6 @@
         .visible {
             opacity: 1;
         }
-
-
         .table {
 			margin: 0px;
 		}
@@ -114,8 +114,9 @@
             border: 1px solid rgba(255, 255, 255, 0.1);
             text-align: center;
             vertical-align: middle;
-            padding: 10px;
+            padding: 9px;
             font-size: 1.2em;
+            line-height: 100%;
         }
         .table-dark th {
             background-color: rgb(34, 48, 56);
@@ -126,12 +127,8 @@
         }
 		.table-dark td, .table-dark th {
             width: 12.5%;
-			overflow: hidden; /* Hide the overflow */
-            white-space: nowrap; /* Prevent line breaks */
             /* text-overflow: ellipsis; /* Add ellipsis for overflow text */
-            max-width: 50px; /* Set a max-width for the cell */
-			direction: rtl;
-			
+            max-width: 50px; /* Set a max-width for the cell */			
         }
         .aql-header {
             background-color: #2493E6;
@@ -299,8 +296,9 @@
                         realLayer = layer.id;
                     }
                 });
+                return screen.layers.find(l => l.id == realLayer);
             }
-            return realLayer;
+            return false;
         }
 
         function generateTable(data) {
@@ -392,16 +390,19 @@
                             const vpuTableCell = document.createElement('td');
                             if(scaler.pipes[pipe] != 'NONE') {
                                 let realLayer = getRealLayer(scaler.screen, scaler.layer);
-                                if(scaler.screen == undefined || typeof realLayer != 'number' || scaler.pipes[pipe] == null || parseInt(scaler.layer) == NaN) {
+                                if(scaler.screen == undefined || realLayer == false || scaler.pipes[pipe] == null || parseInt(scaler.layer) == NaN) {
                                     recheck(device.id, vpu.vpu_id, scaler.id, pipe);
                                 } else {
-                                    let realLayer = getRealLayer(scaler.screen, scaler.layer);
-                                    vpuTableCell.innerHTML = "S" + scaler.screen + "&#9656;L" + realLayer + "<br><small>PIPE " + scaler.pipes[pipe] +"</small>";
-                                    vpuTableCell.style.backgroundColor = colors[(realLayer-1)%23];
-                                    vpuTableCell.style.color = text_colors[(realLayer-1)%23];
+                                    // TODO: check if layer properties has been found and if regions are in valid format
+                                    let cap = (realLayer.capability == 'DUAL') ? 1 : 2;
+                                    cap = '<img src="cap' + cap + '.png">';
+                                    let cf = (realLayer.mask) ? '<img src="cf.png">' : '';
+                                    vpuTableCell.innerHTML = "S" + scaler.screen + "&#9656;L" + realLayer.id + '<br><small>R:' + realLayer.regions.join(',&#8203;') + "<br>PIPE " + scaler.pipes[pipe] +"</small>" + '<br>' + cap + cf;
+                                    vpuTableCell.style.backgroundColor = colors[(realLayer.id-1)%23];
+                                    vpuTableCell.style.color = text_colors[(realLayer.id-1)%23];
                                 }
                             } else {
-                                vpuTableCell.innerHTML = "&nbsp;<br>&nbsp;";
+                                vpuTableCell.innerHTML = "&nbsp;<br><small>&nbsp;</small><br><small>&nbsp;</small>";
                             }
                             vpuTableRow.appendChild(vpuTableCell);
                         }
