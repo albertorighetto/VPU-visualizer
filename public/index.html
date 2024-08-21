@@ -218,17 +218,33 @@
         let screens;
         var timer = null;
 
-
-
-        function recheck(deviceId, vpuId, scalerId, pipeId) {
+        function recheckVPU(deviceId, vpuId) {
             let message = {};
-            message.type = 'recheck';
+            message.type = 'recheckVPU';
+            message.options = {};
+            message.options.deviceId = deviceId;
+            message.options.procId = vpuId;
+            socket.emit('sendMessage', JSON.stringify(message));
+        }
+
+        function recheckScaler(deviceId, vpuId, scalerId) {
+            let message = {};
+            message.type = 'recheckScaler';
             message.options = {};
             message.options.deviceId = deviceId;
             message.options.procId = vpuId;
             message.options.scalerId = scalerId;
-            message.options.pipeId = pipeId;
-            //console.log(message);
+            socket.emit('sendMessage', JSON.stringify(message));
+        }
+
+        function recheckPipe(deviceId, vpuId, scalerId, pipe) {
+            let message = {};
+            message.type = 'recheckPipe';
+            message.options = {};
+            message.options.deviceId = deviceId;
+            message.options.procId = vpuId;
+            message.options.scalerId = scalerId;
+            message.options.pipeId = pipe;
             socket.emit('sendMessage', JSON.stringify(message));
         }
 
@@ -371,6 +387,15 @@
                 deviceHeader.innerHTML = "Device " + device.id + " - " + device.type + " - " + device.vpus + " VPU";
                 devicesTable.appendChild(deviceHeader);
 
+                if(device.vpus != device.vpu.length) {
+                    for(i = 1; i <= device.vpus; i++) {
+                        if(device.vpu == undefined || device.vpu.find(v => v.id == i) == undefined) {
+                            recheckVPU(device.id, i); // "i" is the missing VPU id
+                            console.log("Rechecking VPU " + i + ", device " + device.id);
+                        }
+                    }
+                }
+
                 device.vpu.forEach(vpu => {
                     const tableBody = document.createElement('table');
                     tableBody.classList.add('table');
@@ -386,24 +411,44 @@
 
                     vpu.scalers.forEach(scaler => {
                         const vpuTableRow  = document.createElement('tr');
+                        let scalerError = false;
+                        if(scaler.isEnabled == null || scaler.layer == null || scaler.pipes.length != 9 || (scaler.isEnabled == true && scaler.screen == null)) {
+                            // We miss some data for this scaler
+                            recheckScaler(device.id, vpu.vpu_id, scaler.id);
+                            scalerError = true;
+                        }
                         for(pipe = 1; pipe <= 8; pipe++) { 
                             const vpuTableCell = document.createElement('td');
-                            if(scaler.pipes[pipe] != 'NONE') {
-                                let realLayer = getRealLayer(scaler.screen, scaler.layer);
-                                if(scaler.screen == undefined || realLayer == false || scaler.pipes[pipe] == null || parseInt(scaler.layer) == NaN) {
-                                    recheck(device.id, vpu.vpu_id, scaler.id, pipe);
-                                } else {
-                                    // TODO: check if layer properties has been found and if regions are in valid format
-                                    let cap = (realLayer.capability == 'DUAL') ? 1 : 2;
-                                    cap = '<img src="cap' + cap + '.png">';
-                                    let cf = (realLayer.mask) ? '<img src="cf.png">' : '';
-                                    vpuTableCell.innerHTML = "S" + scaler.screen + "&#9656;L" + realLayer.id + '<br><small>R:' + realLayer.regions.join(',&#8203;') + "<br>PIPE " + scaler.pipes[pipe] +"</small>" + '<br>' + cap + cf;
-                                    vpuTableCell.style.backgroundColor = colors[(realLayer.id-1)%23];
-                                    vpuTableCell.style.color = text_colors[(realLayer.id-1)%23];
-                                }
+                            if(scalerError) {
+                                // This entire row of VPU has invalid data, make it easily visible in all its cells
+                                vpuTableCell.innerHTML = "MISSING<br><small>SCALER<br>DATA</small><br>&nbsp;";
                             } else {
-                                vpuTableCell.innerHTML = "&nbsp;<br><small>&nbsp;</small><br><small>&nbsp;</small>";
+                                // We have all the scaler data but maybe we miss something specific for this cell
+                                let cellError = false;
+                                if(scaler.pipes[pipe] == 'NONE') {
+                                    // This VPU cell is not used anywhere
+                                    vpuTableCell.innerHTML = "&nbsp;<br><small>&nbsp;<br>&nbsp;</small><br>&nbsp;";
+                                } else if(scaler.pipes[pipe] == undefined) {
+                                    // We miss all the info for this pipe
+                                    recheckPipe(device.id, vpu.vpu_id, scaler.id, pipe);
+                                    vpuTableCell.innerHTML = "MISSING<br><small>PIPE<br>DATA</small><br>&nbsp;";
+                                } else {
+                                    let realLayer = getRealLayer(scaler.screen, scaler.layer);
+                                    if(realLayer == false || realLayer == undefined) {
+                                        // TODO: this has more to do with Screen data integrity
+                                        //recheckScaler(device.id, vpu.vpu_id, scaler.id);
+                                    } else {
+                                        // TODO: check if layer properties has been found and if regions are in valid format
+                                        let cap = (realLayer.capability == 'DUAL') ? 1 : 2;
+                                        cap = '<img src="cap' + cap + '.png">';
+                                        let cf = (realLayer.mask) ? '<img src="cf.png">' : '';
+                                        vpuTableCell.innerHTML = "S" + scaler.screen + "&#9656;L" + realLayer.id + '<br><small>R:' + realLayer.regions.join(',&#8203;') + "<br>PIPE " + scaler.pipes[pipe] +"</small>" + '<br>' + cap + cf;
+                                        vpuTableCell.style.backgroundColor = colors[(realLayer.id-1)%23];
+                                        vpuTableCell.style.color = text_colors[(realLayer.id-1)%23];
+                                    }
+                                }
                             }
+                            
                             vpuTableRow.appendChild(vpuTableCell);
                         }
                         tableBody.appendChild(vpuTableRow);

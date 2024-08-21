@@ -25,14 +25,14 @@ app.get('/', (req, res) => {
 var awj = null;
 
 const empty_proc = [
-    {id: 1, isEnabled: false, layer: false, capability: false, screen: undefined, pipes: []},
-    {id: 2, isEnabled: false, layer: false, capability: false, screen: undefined, pipes: []},
-    {id: 3, isEnabled: false, layer: false, capability: false, screen: undefined, pipes: []},
-    {id: 4, isEnabled: false, layer: false, capability: false, screen: undefined, pipes: []},
-    {id: 5, isEnabled: false, layer: false, capability: false, screen: undefined, pipes: []},
-    {id: 6, isEnabled: false, layer: false, capability: false, screen: undefined, pipes: []},
-    {id: 7, isEnabled: false, layer: false, capability: false, screen: undefined, pipes: []},
-    {id: 8, isEnabled: false, layer: false, capability: false, screen: undefined, pipes: []}
+    {id: 1, isEnabled: null, layer: null, capability: null, screen: null, pipes: []},
+    {id: 2, isEnabled: null, layer: null, capability: null, screen: null, pipes: []},
+    {id: 3, isEnabled: null, layer: null, capability: null, screen: null, pipes: []},
+    {id: 4, isEnabled: null, layer: null, capability: null, screen: null, pipes: []},
+    {id: 5, isEnabled: null, layer: null, capability: null, screen: null, pipes: []},
+    {id: 6, isEnabled: null, layer: null, capability: null, screen: null, pipes: []},
+    {id: 7, isEnabled: null, layer: null, capability: null, screen: null, pipes: []},
+    {id: 8, isEnabled: null, layer: null, capability: null, screen: null, pipes: []}
 ]
 
 const device_vpus = {
@@ -141,6 +141,11 @@ function connectAWJ() {
             if(jsonObject == undefined || jsonObject == {}) {
                 return;
             }
+            if(jsonObject.path == undefined) {
+                console.log("JSON ERROR: ###############################################")
+                console.log(JSON.stringify(jsonObject))
+                return;
+            }
             //const matches = data.match(regex_device_type);
             let matches = jsonObject.path.match(regex_device_type);
             if (matches) {
@@ -151,7 +156,7 @@ function connectAWJ() {
 
                 if(devices.every(d => d.hasOwnProperty('type'))) {
                     //console.log(JSON.stringify(devices));
-                    getVPUUsage();
+                    getDevicesUsage();
                 }
                 return;
             }
@@ -225,8 +230,6 @@ function connectAWJ() {
                 const layerId = match_layer_regions[2];
                 let layer = screen.layers.find(l => l.id == layerId);
                 layer.regions = jsonObject.value;
-                console.log(layer)
-                
             } else if(match_layer_mask) {
                 const screenId = match_layer_mask[1];
                 let screen = screens.find(s => s.id == screenId);
@@ -332,13 +335,22 @@ io.on('connection', (socket) => {
                 console.log("Invalid host/IP or TCP port number");
                 io.emit("message", JSON.stringify({"type": "error", "title": "Wrong settings", "content": "Host/IP and port are not valid"}));
             }
-        } else if(message.type == "recheck") {
-            // Get which screen is processed by this scaler
-            let awjMessage = `{"op":"get","path":"DeviceObject/preconfig/resources/new/status/mapping/\$device/@items/${message.options.deviceId}/\$vpuLayer/@items/PROC_${message.options.procId}_SCALER_${message.options.scalerId}/@props/usedInScreen"}`
-            awj.write(awjMessage + eotChar);
-            awjMessage = `{"op":"get","path":"DeviceObject/preconfig/resources/new/status/mapping/\$device/@items/${message.options.deviceId}/\$vpuLayer/@items/PROC_${message.options.procId}_SCALER_${message.options.scalerId}/scalerAllocation/@props/usedOnOutPipe${message.options.pipeId}"}`;
-            awj.write(awjMessage + eotChar);
-            //console.log("RECHECKING: " + JSON.stringify(awjMessage))
+        } else if(message.type == "recheckScaler") {
+            // We are missing some data about a single scaler, check everything again
+            let device = devices.find(d => d.id == message.options.deviceId);
+            getScalerUsage(device, message.options.procId, message.options.scalerId);
+            //console.log("RECHECKING SCALER " + device.id + "/" + message.options.procId + "/" + message.options.scalerId)
+        } else if(message.type == "recheckVPU") {
+            // Looks like this processor is totally missing
+            let device = devices.find(d => d.id == message.options.deviceId);
+            getVPUUsage(device, message.options.procId);
+            //console.log("RECHECKING VPU " + device.id + "/" + message.options.procId)
+        } else if(message.type == "recheckPipe") {
+            // Looks like we miss some data for a specific pipe
+            let device = devices.find(d => d.id == message.options.deviceId);
+            //getVPUUsage(device, message.options.procId);
+            getScalerPipeUsage(device, message.options.procId, message.options.scalerId, message.options.pipeId);
+            //console.log("RECHECKING PIPE " + device.id + "/" + message.options.procId + "/" + message.options.scalerId + "/" + message.options.pipeId)
         }
     });
 
@@ -354,25 +366,41 @@ server.listen(PORT, () => {
     require('child_process').exec(`start http://localhost:${PORT}`);
 });
 
-function getVPUUsage(deviceId) {
+function getDevicesUsage() {
     console.log("Getting VPU usage");
 
     devices.forEach(device => {
-        for(let vpu = 1; vpu <= device.vpus; vpu++) {
-            for(scaler = 1; scaler <=8; scaler++) {
-                message = `{"op":"get","path":"DeviceObject/preconfig/resources/new/status/mapping/\$device/@items/${device.id}/\$vpuLayer/@items/PROC_${vpu}_SCALER_${scaler}/@props/isEnabled"}`;
-                awj.write(message + eotChar);
-                message = `{"op":"get","path":"DeviceObject/preconfig/resources/new/status/mapping/\$device/@items/${device.id}/\$vpuLayer/@items/PROC_${vpu}_SCALER_${scaler}/@props/usedInLayer"}`;
-                awj.write(message + eotChar);
-                message = `{"op":"get","path":"DeviceObject/preconfig/resources/new/status/mapping/\$device/@items/${device.id}/\$vpuLayer/@items/PROC_${vpu}_SCALER_${scaler}/@props/capability"}`;
-                awj.write(message + eotChar);
-                for(pipe = 1; pipe <= 8; pipe++) { //TODO: get only the needed pipes
-                    message = `{"op":"get","path":"DeviceObject/preconfig/resources/new/status/mapping/\$device/@items/${device.id}/\$vpuLayer/@items/PROC_${vpu}_SCALER_${scaler}/scalerAllocation/@props/usedOnOutPipe${pipe}"}`;
-                    awj.write(message + eotChar);
-                }
-            }
-        }
+        getDeviceUsage(device);
     });
+}
+
+function getDeviceUsage(device) {
+    for(let vpu = 1; vpu <= device.vpus; vpu++) {
+        getVPUUsage(device, vpu);
+    }
+}
+
+function getVPUUsage(device, vpu) {
+    for(scaler = 1; scaler <=8; scaler++) {
+        getScalerUsage(device, vpu, scaler);
+    }
+}
+
+function getScalerUsage(device, vpu, scaler) {
+    message = `{"op":"get","path":"DeviceObject/preconfig/resources/new/status/mapping/\$device/@items/${device.id}/\$vpuLayer/@items/PROC_${vpu}_SCALER_${scaler}/@props/isEnabled"}`;
+    awj.write(message + eotChar);
+    message = `{"op":"get","path":"DeviceObject/preconfig/resources/new/status/mapping/\$device/@items/${device.id}/\$vpuLayer/@items/PROC_${vpu}_SCALER_${scaler}/@props/usedInLayer"}`;
+    awj.write(message + eotChar);
+    message = `{"op":"get","path":"DeviceObject/preconfig/resources/new/status/mapping/\$device/@items/${device.id}/\$vpuLayer/@items/PROC_${vpu}_SCALER_${scaler}/@props/capability"}`;
+    awj.write(message + eotChar);
+    for(pipe = 1; pipe <= 8; pipe++) { //TODO: get only the needed pipes
+        getScalerPipeUsage(device, vpu, scaler, pipe);
+    }
+}
+
+function getScalerPipeUsage(device, vpu, scaler, pipe) {
+    message = `{"op":"get","path":"DeviceObject/preconfig/resources/new/status/mapping/\$device/@items/${device.id}/\$vpuLayer/@items/PROC_${vpu}_SCALER_${scaler}/scalerAllocation/@props/usedOnOutPipe${pipe}"}`;
+    awj.write(message + eotChar);
 }
 
 function getVpu(device, vpu_id) {
