@@ -1,11 +1,9 @@
 {
-  "version": "1.0.2",
+  "version": "1.0.3",
   "author": "Alberto Righetto - arighetto88@gmail.com",
   "dependencies": {
     "express": "^4.19.2",
     "socket.io": "^4.7.5"
-  },
-  "devDependencies": {
   },
   "scripts": {
     "start": "node server.js",
@@ -17,7 +15,9 @@
       "index.html",
       "node_modules/socket.io/client-dist/*.js"
     ],
-    "targets": [ "node20-win-x64" ]
+    "targets": [
+      "node20-win-x64"
+    ]
   },
   "main": "./server.js",
   "bin": "./server.js",
