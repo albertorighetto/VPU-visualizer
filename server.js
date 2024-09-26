@@ -118,6 +118,13 @@ function connectAWJ() {
             awj.write(message + eotChar);
         }
 
+        // Then we immediately subscribe to changes updates
+        message =  `{"op":"replace","path":"Subscriptions", "value":[
+            "DeviceObject/preconfig/resources/new/$screen/@items/",
+            "DeviceObject/preconfig/resources/new/status/mapping/$device/@items/"
+        ]}`;
+        awj.write(message + eotChar);
+
         setTimeout(function() {
             // Then we get connected devices and their data
             // TODO: ensure this part is executed AFTER we got all screen info
@@ -223,6 +230,10 @@ function connectAWJ() {
                 let screen = screens.find(s => s.id == screenId);
                 const layerId = match_layer_capability[2];
                 let layer = screen.layers.find(l => l.id == layerId);
+                if(layer == undefined) { // If the layer doesn't exist yet, add it with just the ID and then grab its reference again (this happens because of subscriptions)
+                    screen.layers.push({id: layerId});
+                    layer = screen.layers.find(l => l.id == layerId);
+                }
                 layer.capability = jsonObject.value;
             } else if(match_layer_regions) {
                 const screenId = match_layer_regions[1];
@@ -247,12 +258,14 @@ function connectAWJ() {
                 const proc = match_scaler[2]; // PROC_#
                 const scaler = match_scaler[3]; // SCALER_#
                 let vpu = getVpu(device, proc);
-                let isEnabled = jsonObject.value;
-                vpu.scalers[scaler-1].isEnabled = isEnabled;
-                if(isEnabled) {
-                    // Get which screen is processed by this scaler
-                    message = `{"op":"get","path":"DeviceObject/preconfig/resources/new/status/mapping/$device/@items/${deviceId}/$vpuLayer/@items/PROC_${proc}_SCALER_${scaler}/@props/usedInScreen"}`
-                    awj.write(message + eotChar);
+                if(vpu != false) {  // Prevent adding more VPUs than existing ones, because of subsctiptions sometimes sending 4 VPUs updates regardless of the device
+                    let isEnabled = jsonObject.value;
+                    vpu.scalers[scaler-1].isEnabled = isEnabled;
+                    if(isEnabled) {
+                        // Get which screen is processed by this scaler
+                        message = `{"op":"get","path":"DeviceObject/preconfig/resources/new/status/mapping/$device/@items/${deviceId}/$vpuLayer/@items/PROC_${proc}_SCALER_${scaler}/@props/usedInScreen"}`
+                        awj.write(message + eotChar);
+                    }
                 }
             } else if(match_scaler_screen) {
                 const deviceId = match_scaler_screen[1];
@@ -260,7 +273,9 @@ function connectAWJ() {
                 const proc = match_scaler_screen[2]; // PROC_#
                 const scaler = match_scaler_screen[3]; // SCALER_#
                 let vpu = getVpu(device, proc);
-                vpu.scalers[scaler-1].screen = jsonObject.value.substring(1); // The value is "S#", we remove the initial S from the screen number
+                if(vpu != false) {  // Prevent adding more VPUs than existing ones, because of subsctiptions sometimes sending 4 VPUs updates regardless of the device
+                    vpu.scalers[scaler-1].screen = jsonObject.value.substring(1); // The value is "S#", we remove the initial S from the screen number
+                } 
             } else if (match_pipe) {
                 const deviceId = match_pipe[1];
                 let device = devices.find(d => d.id == deviceId);
@@ -268,7 +283,9 @@ function connectAWJ() {
                 const scaler = match_pipe[3]; // SCALER_#
                 const pipe = match_pipe[4]; // PIPE_#
                 let vpu = getVpu(device, proc);
-                vpu.scalers[scaler-1].pipes[pipe] = jsonObject.value;// != 'NONE';
+                if(vpu != false) {  // Prevent adding more VPUs than existing ones, because of subsctiptions sometimes sending 4 VPUs updates regardless of the device
+                    vpu.scalers[scaler-1].pipes[pipe] = jsonObject.value;// != 'NONE';
+                }
             } else if (match_layer) {
                 const deviceId = match_layer[1];
                 let device = devices.find(d => d.id == deviceId);
@@ -281,14 +298,18 @@ function connectAWJ() {
                     layer = parseInt(jsonObject.value) + 1;
                 }
                 let vpu = getVpu(device, proc);
-                vpu.scalers[scaler-1].layer = layer;
+                if(vpu != false) {  // Prevent adding more VPUs than existing ones, because of subsctiptions sometimes sending 4 VPUs updates regardless of the device
+                    vpu.scalers[scaler-1].layer = layer;
+                }
             } else if (match_capability) {
                 const deviceId = match_capability[1];
                 let device = devices.find(d => d.id == deviceId);
                 const proc = match_capability[2]; // PROC_#
                 const scaler = match_capability[3]; // SCALER_#
                 let vpu = getVpu(device, proc);
-                vpu.scalers[scaler-1].capability = jsonObject.value;
+                if(vpu != false) {  // Prevent adding more VPUs than existing ones, because of subsctiptions sometimes sending 4 VPUs updates regardless of the device
+                    vpu.scalers[scaler-1].capability = jsonObject.value;
+                }
             } else {
                 //console.log("No match found.");
             }
@@ -404,6 +425,9 @@ function getScalerPipeUsage(device, vpu, scaler, pipe) {
 }
 
 function getVpu(device, vpu_id) {
+    if(vpu_id > device.vpus) {
+        return false;
+    }
     let vpu = device.vpu.find(v => v.vpu_id == vpu_id);
     if(vpu == undefined) {
         device.vpu.push({

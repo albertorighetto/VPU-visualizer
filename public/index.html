@@ -8,8 +8,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>LivePremier Aquilon VPU Visualizer by Alberto Righetto</title>
-    <!-- Bootstrap CSS -->
-    <link href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css" rel="stylesheet">
     <style>
         body {
             background-color: #1b272f;
@@ -192,13 +190,13 @@
 
         <span>&nbsp;&nbsp;&nbsp;</span>
 
-        <button id="connect" class="button">GET VPU USAGE</button>
+        <button id="connect" class="button">CONNECT</button>
     </div>
 
     <div id="notes">
         <div class="notes-header">
             What does "pipe" means? A pipe is an "output link" used by a screen. Outputs cap 1 use 1 pipe, cap 2 use 2 pipes. Easy.<br />
-            Each screen has its own pipes. A screen with 5x outputs cap 2 uses 10 pipes.
+            Each screen has its own pipes. A screen with 5x outputs cap 2 uses 10 pipes, spanning on 2 VPUs.
         </div>
     </div>
 
@@ -466,7 +464,7 @@
     </p>
     
     <p>
-        Version 1.0.3
+        Version 1.0.4
     </p>
     <p>
         <a href="https://github.com/albertorighetto/VPU-visualizer/releases" target="_blank">Check for updates</a>
@@ -487,10 +485,10 @@
         $('#progress-bar-container').hide();
         $('#notes').hide();
 
-        // Listen for clicks on GET VPU USAGE
+        // Listen for clicks on CONNECT button
         $('#connect').click(() => {getVpuUsageClicked();});
 
-        // Pressing enter while editing the IP address will trigget GET VPU USAGE
+        // Pressing enter while editing the IP address will trigger CONNECT button
         $( "#ip" ).on( "keypress", function( event ) {
             if ( event.which == 13 ) {
                 event.preventDefault();
@@ -498,7 +496,7 @@
             }
         });
 
-        // Pressing enter while editing the port will trigget GET VPU USAGE
+        // Pressing enter while editing the port will trigger CONNECT button
         $( "#port" ).on( "keypress", function( event ) {
             if ( event.which == 13 ) {
                 event.preventDefault();
