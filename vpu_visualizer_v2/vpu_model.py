@@ -1,0 +1,609 @@
+"""
+VPU Visualizer 2.0 Data Models
+Data structures for devices, VPUs, screens, and scalers.
+"""
+
+import re
+from dataclasses import dataclass, field
+from typing import Optional, List, Dict, Any
+from enum import Enum
+
+
+class LayerCapability(Enum):
+    """Layer capability levels based on app source LAYER_CAPABILITIES enum."""
+    OFF = "OFF"
+    DUAL = "DUAL"
+    K4 = "4K"
+    K3 = "3"
+    K5 = "5K"
+    K5_NUM = "5"
+    K6 = "6"
+    K7 = "7"
+    K8 = "8K"
+
+
+# Device types and their VPU counts
+# Based on official app source VAR_ENUMS.DEV:
+# RS1/RSALPHA=1VPU, RS2/RS3=2VPUs, RS4/RS5=3VPUs, RS6=4VPUs
+# C=2VPUs, CPLUS=3VPUs, CMAX=4VPUs, CMINI=1VPU
+DEVICE_VPU_COUNTS = {
+    # Official NLC_ prefixed names from app source
+    "NLC_DBG": 1,        # Debug device
+    "NLC_RS1": 1,        # Aquilon RS1 - 4U chassis
+    "NLC_RS2": 2,        # Aquilon RS2 - 4U chassis
+    "NLC_RS3": 2,        # Aquilon RS3 - 5U chassis
+    "NLC_RS4": 3,        # Aquilon RS4 - 5U chassis
+    "NLC_RS5": 3,        # Aquilon RS5 - 6U chassis
+    "NLC_RS6": 4,        # Aquilon RS6 - 6U chassis
+    "NLC_RSALPHA": 1,    # Aquilon RS Alpha - 4U chassis
+    "NLC_C": 2,          # Aquilon C - 4U chassis
+    "NLC_CPLUS": 3,      # Aquilon C+ - 5U chassis
+    "NLC_CMAX": 4,       # Aquilon Cmax - 6U chassis
+    "NLC_CMINI": 1,      # Aquilon Cmini - 3U chassis
+    # VDW variants (VideoWall)
+    "VDW_W": 2,          # VideoWall W - 4U chassis
+    "VDW_WPLUS": 3,      # VideoWall W+ - 5U chassis
+    "VDW_WMAX": 4,       # VideoWall Wmax - 6U chassis
+    # Legacy short names (without NLC_ prefix)
+    "RSALPHA": 1,
+    "RS1": 1,
+    "RS2": 2,
+    "RS3": 2,
+    "RS4": 3,
+    "RS5": 3,
+    "RS6": 4,
+    "C": 2,
+    "CPLUS": 3,
+    "CMAX": 4,
+    "CMINI": 1,
+}
+
+
+@dataclass
+class Scaler:
+    """Represents a single scaler in a VPU."""
+    id: int
+    is_enabled: Optional[bool] = None
+    is_available: Optional[bool] = None
+    layer: Optional[int] = None
+    capability: Optional[str] = None
+    screen: Optional[int] = None
+    pipes: Dict[int, Any] = field(default_factory=dict)  # pipe_id -> usage value
+    cutnfill_capa: Optional[Any] = None
+    seamless_capa: Optional[Any] = None
+    channel: Optional[Any] = None
+    slice: Optional[Any] = None
+    
+    def is_complete(self) -> bool:
+        """Check if we have all the data for this scaler."""
+        return self.is_enabled is not None
+    
+    def get_pipe_usage_display(self) -> str:
+        """Get a display string for pipe usage."""
+        used_pipes = [p for p, v in self.pipes.items() if v and v != "NONE"]
+        if used_pipes:
+            return f"Pipes: {', '.join(map(str, used_pipes))}"
+        return "No pipes"
+
+
+@dataclass
+class VPU:
+    """Represents a Video Processing Unit."""
+    vpu_id: int
+    scalers: List[Scaler] = field(default_factory=list)
+    
+    def __post_init__(self):
+        if not self.scalers:
+            self.scalers = [Scaler(id=i) for i in range(1, 17)]
+
+    def get_scaler(self, scaler_id: int) -> Optional[Scaler]:
+        """Get scaler (mixer) by ID (1-16)."""
+        for scaler in self.scalers:
+            if scaler.id == scaler_id:
+                return scaler
+        return None
+
+    def get_active_scalers_count(self) -> int:
+        """Count active scalers."""
+        return sum(1 for s in self.scalers if s.is_enabled)
+
+    def get_usage_percentage(self) -> float:
+        """Get VPU usage as percentage."""
+        return (self.get_active_scalers_count() / 16) * 100
+
+
+@dataclass
+class Device:
+    """Represents a device (unit) in the system."""
+    id: int
+    device_type: Optional[str] = None
+    vpu_count: int = 0
+    vpus: List[VPU] = field(default_factory=list)
+    
+    def get_vpu(self, vpu_id: int) -> Optional[VPU]:
+        """Get or create VPU by ID."""
+        for vpu in self.vpus:
+            if vpu.vpu_id == vpu_id:
+                return vpu
+        
+        # Create if VPU count allows
+        if vpu_id <= self.vpu_count:
+            new_vpu = VPU(vpu_id=vpu_id)
+            self.vpus.append(new_vpu)
+            self.vpus.sort(key=lambda v: v.vpu_id)
+            return new_vpu
+        
+        return None
+    
+    def update_from_type(self, device_type: str):
+        """Update device info from type string."""
+        # Remove 'DEV_' prefix if present
+        clean_type = device_type.replace("DEV_", "")
+        self.device_type = clean_type
+        self.vpu_count = DEVICE_VPU_COUNTS.get(clean_type, 0)
+        
+        # Initialize VPUs
+        for vpu_id in range(1, self.vpu_count + 1):
+            self.get_vpu(vpu_id)
+
+
+@dataclass 
+class Layer:
+    """Represents a layer in a screen."""
+    id: int
+    capability: Optional[str] = None
+    regions: List[Any] = field(default_factory=list)
+    mask: bool = False
+
+
+@dataclass
+class Screen:
+    """Represents a screen."""
+    id: int
+    active: bool = False
+    optimized: bool = False
+    layers: List[Layer] = field(default_factory=list)
+    
+    def get_layer(self, layer_id: int) -> Optional[Layer]:
+        """Get or create layer by ID."""
+        for layer in self.layers:
+            if layer.id == layer_id:
+                return layer
+        return None
+    
+    def add_layer(self, layer_id: int) -> Layer:
+        """Add a new layer."""
+        layer = Layer(id=layer_id)
+        self.layers.append(layer)
+        self.layers.sort(key=lambda l: l.id)
+        return layer
+
+
+class VPUModel:
+    """Main data model for VPU Visualizer."""
+    
+    # Regex patterns for parsing AWJ responses
+    # Updated patterns based on app source analysis
+    REGEX_DEVICE_TYPE = re.compile(r"DeviceObject/system/\$device/@items/(\d+)/@props/dev")
+    REGEX_SCREEN_MODE = re.compile(r"DeviceObject/preconfig/resources/new/\$screen/@items/S(\d+)/status/@props/mode")
+    REGEX_SCREEN_LAYER_COUNT = re.compile(r"DeviceObject/preconfig/resources/new/\$screen/@items/S(\d+)/status/@props/layerCount")
+    REGEX_SCREEN_OPTIMIZED = re.compile(r"DeviceObject/preconfig/resources/new/\$screen/@items/S(\d+)/status/@props/isOptimized")
+    REGEX_LAYER_CAPABILITY = re.compile(r"DeviceObject/preconfig/resources/new/\$screen/@items/S(\d+)/\$layer/@items/(\d+)/status/@props/capability")
+    REGEX_LAYER_REGIONS = re.compile(r"DeviceObject/preconfig/resources/new/\$screen/@items/S(\d+)/\$layer/@items/(\d+)/status/@props/usedInRegions")
+    REGEX_LAYER_MASK = re.compile(r"DeviceObject/preconfig/resources/new/\$screen/@items/S(\d+)/\$layer/@items/(\d+)/status/@props/canUseMask")
+    
+    # VPU Mixer patterns - multi-device firmware uses $vpuMixer / MIXER naming
+    REGEX_VPU_ENABLED = re.compile(r"DeviceObject/preconfig/resources/new/status/mapping/\$device/@items/(\d+)/\$vpuMixer/@items/PROC_(\d+)_MIXER_(\d+)/@props/isEnabled")
+    REGEX_VPU_AVAILABLE = re.compile(r"DeviceObject/preconfig/resources/new/status/mapping/\$device/@items/(\d+)/\$vpuMixer/@items/PROC_(\d+)_MIXER_(\d+)/@props/isAvailable")
+    REGEX_VPU_CAPABILITY = re.compile(r"DeviceObject/preconfig/resources/new/status/mapping/\$device/@items/(\d+)/\$vpuMixer/@items/PROC_(\d+)_MIXER_(\d+)/@props/capability")
+    REGEX_VPU_SCREEN = re.compile(r"DeviceObject/preconfig/resources/new/status/mapping/\$device/@items/(\d+)/\$vpuMixer/@items/PROC_(\d+)_MIXER_(\d+)/@props/usedInScreen")
+    REGEX_VPU_LAYER = re.compile(r"DeviceObject/preconfig/resources/new/status/mapping/\$device/@items/(\d+)/\$vpuMixer/@items/PROC_(\d+)_MIXER_(\d+)/@props/usedInLayer")
+    REGEX_VPU_CUTNFILL_CAPA = re.compile(r"DeviceObject/preconfig/resources/new/status/mapping/\$device/@items/(\d+)/\$vpuMixer/@items/PROC_(\d+)_MIXER_(\d+)/@props/cutnfillCapa")
+    REGEX_VPU_SEAMLESS_CAPA = re.compile(r"DeviceObject/preconfig/resources/new/status/mapping/\$device/@items/(\d+)/\$vpuMixer/@items/PROC_(\d+)_MIXER_(\d+)/@props/seamlessCapa")
+    REGEX_VPU_CHANNEL = re.compile(r"DeviceObject/preconfig/resources/new/status/mapping/\$device/@items/(\d+)/\$vpuMixer/@items/PROC_(\d+)_MIXER_(\d+)/@props/channel")
+    REGEX_VPU_SLICE = re.compile(r"DeviceObject/preconfig/resources/new/status/mapping/\$device/@items/(\d+)/\$vpuMixer/@items/PROC_(\d+)_MIXER_(\d+)/@props/slice")
+
+    # Mixer allocation pipe pattern
+    REGEX_SCALER_PIPE = re.compile(r"DeviceObject/preconfig/resources/new/status/mapping/\$device/@items/(\d+)/\$vpuMixer/@items/PROC_(\d+)_MIXER_(\d+)/mixerAllocation/@props/usedOnOutPipe(\d+)")
+
+    def __init__(self):
+        self.devices: List[Device] = [Device(id=i) for i in range(1, 5)]
+        self.screens: List[Screen] = [Screen(id=i) for i in range(1, 25)]
+        self._callbacks: List[callable] = []
+    
+    def add_update_callback(self, callback: callable):
+        """Add a callback to be called when data is updated."""
+        self._callbacks.append(callback)
+    
+    def _notify_update(self):
+        """Notify all callbacks of data update."""
+        for callback in self._callbacks:
+            callback()
+    
+    def get_device(self, device_id: int) -> Optional[Device]:
+        """Get device by ID (1-4)."""
+        for device in self.devices:
+            if device.id == device_id:
+                return device
+        return None
+    
+    def get_screen(self, screen_id: int) -> Optional[Screen]:
+        """Get screen by ID (1-24)."""
+        for screen in self.screens:
+            if screen.id == screen_id:
+                return screen
+        return None
+    
+    def process_message(self, data: dict) -> str:
+        """
+        Process an incoming AWJ message and update the model.
+        Returns a debug string describing what was updated.
+        """
+        if "path" not in data:
+            return "[PARSE] No path in message"
+        
+        path = data["path"]
+        value = data.get("value")
+        
+        # Try each pattern
+        result = self._try_parse_device_type(path, value)
+        if result: return result
+        
+        result = self._try_parse_screen_mode(path, value)
+        if result: return result
+        
+        result = self._try_parse_screen_layer_count(path, value)
+        if result: return result
+        
+        result = self._try_parse_screen_optimized(path, value)
+        if result: return result
+        
+        result = self._try_parse_layer_capability(path, value)
+        if result: return result
+        
+        result = self._try_parse_layer_regions(path, value)
+        if result: return result
+        
+        result = self._try_parse_layer_mask(path, value)
+        if result: return result
+        
+        result = self._try_parse_vpu_enabled(path, value)
+        if result: return result
+        
+        result = self._try_parse_vpu_available(path, value)
+        if result: return result
+        
+        result = self._try_parse_vpu_capability(path, value)
+        if result: return result
+        
+        result = self._try_parse_vpu_screen(path, value)
+        if result: return result
+        
+        result = self._try_parse_vpu_layer(path, value)
+        if result: return result
+
+        result = self._try_parse_vpu_cutnfill_capa(path, value)
+        if result: return result
+
+        result = self._try_parse_vpu_seamless_capa(path, value)
+        if result: return result
+
+        result = self._try_parse_vpu_channel(path, value)
+        if result: return result
+
+        result = self._try_parse_vpu_slice(path, value)
+        if result: return result
+
+        result = self._try_parse_scaler_pipe(path, value)
+        if result: return result
+
+        return f"[PARSE] Unhandled path: {path}"
+    
+    def _try_parse_device_type(self, path: str, value: Any) -> Optional[str]:
+        match = self.REGEX_DEVICE_TYPE.match(path)
+        if match:
+            device_id = int(match.group(1))
+            device = self.get_device(device_id)
+            if device and value:
+                device.update_from_type(value)
+                self._notify_update()
+                return f"[DEVICE] Device {device_id}: type={device.device_type}, vpus={device.vpu_count}"
+        return None
+    
+    def _try_parse_screen_mode(self, path: str, value: Any) -> Optional[str]:
+        match = self.REGEX_SCREEN_MODE.match(path)
+        if match:
+            screen_id = int(match.group(1))
+            screen = self.get_screen(screen_id)
+            if screen:
+                screen.active = value != "DISABLED"
+                self._notify_update()
+                return f"[SCREEN] Screen {screen_id}: active={screen.active}"
+        return None
+    
+    def _try_parse_screen_layer_count(self, path: str, value: Any) -> Optional[str]:
+        match = self.REGEX_SCREEN_LAYER_COUNT.match(path)
+        if match:
+            screen_id = int(match.group(1))
+            screen = self.get_screen(screen_id)
+            if screen and value:
+                layer_count = int(value)
+                screen.layers = [Layer(id=i) for i in range(1, layer_count + 1)]
+                self._notify_update()
+                return f"[SCREEN] Screen {screen_id}: layers={layer_count}"
+        return None
+    
+    def _try_parse_screen_optimized(self, path: str, value: Any) -> Optional[str]:
+        match = self.REGEX_SCREEN_OPTIMIZED.match(path)
+        if match:
+            screen_id = int(match.group(1))
+            screen = self.get_screen(screen_id)
+            if screen:
+                screen.optimized = bool(value)
+                self._notify_update()
+                return f"[SCREEN] Screen {screen_id}: optimized={screen.optimized}"
+        return None
+    
+    def _try_parse_layer_capability(self, path: str, value: Any) -> Optional[str]:
+        match = self.REGEX_LAYER_CAPABILITY.match(path)
+        if match:
+            screen_id = int(match.group(1))
+            layer_id = int(match.group(2))
+            screen = self.get_screen(screen_id)
+            if screen:
+                layer = screen.get_layer(layer_id)
+                if not layer:
+                    layer = screen.add_layer(layer_id)
+                layer.capability = value
+                self._notify_update()
+                return f"[LAYER] Screen {screen_id}, Layer {layer_id}: capability={value}"
+        return None
+    
+    def _try_parse_layer_regions(self, path: str, value: Any) -> Optional[str]:
+        match = self.REGEX_LAYER_REGIONS.match(path)
+        if match:
+            screen_id = int(match.group(1))
+            layer_id = int(match.group(2))
+            screen = self.get_screen(screen_id)
+            if screen:
+                layer = screen.get_layer(layer_id)
+                if layer:
+                    layer.regions = value if value else []
+                    self._notify_update()
+                    return f"[LAYER] Screen {screen_id}, Layer {layer_id}: regions={value}"
+        return None
+    
+    def _try_parse_layer_mask(self, path: str, value: Any) -> Optional[str]:
+        match = self.REGEX_LAYER_MASK.match(path)
+        if match:
+            screen_id = int(match.group(1))
+            layer_id = int(match.group(2))
+            screen = self.get_screen(screen_id)
+            if screen:
+                layer = screen.get_layer(layer_id)
+                if layer:
+                    layer.mask = bool(value)
+                    self._notify_update()
+                    return f"[LAYER] Screen {screen_id}, Layer {layer_id}: mask={layer.mask}"
+        return None
+    
+    def _try_parse_vpu_enabled(self, path: str, value: Any) -> Optional[str]:
+        match = self.REGEX_VPU_ENABLED.match(path)
+        if match:
+            device_id = int(match.group(1))
+            vpu_id = int(match.group(2))
+            scaler_id = int(match.group(3))
+            
+            device = self.get_device(device_id)
+            if device:
+                vpu = device.get_vpu(vpu_id)
+                if vpu:
+                    scaler = vpu.get_scaler(scaler_id)
+                    if scaler:
+                        scaler.is_enabled = bool(value)
+                        self._notify_update()
+                        return f"[VPU] Device {device_id}, VPU {vpu_id}, Scaler {scaler_id}: enabled={value}"
+        return None
+    
+    def _try_parse_vpu_available(self, path: str, value: Any) -> Optional[str]:
+        match = self.REGEX_VPU_AVAILABLE.match(path)
+        if match:
+            device_id = int(match.group(1))
+            vpu_id = int(match.group(2))
+            scaler_id = int(match.group(3))
+            
+            device = self.get_device(device_id)
+            if device:
+                vpu = device.get_vpu(vpu_id)
+                if vpu:
+                    scaler = vpu.get_scaler(scaler_id)
+                    if scaler:
+                        scaler.is_available = bool(value)
+                        self._notify_update()
+                        return f"[VPU] Device {device_id}, VPU {vpu_id}, Scaler {scaler_id}: available={value}"
+        return None
+    
+    def _try_parse_vpu_capability(self, path: str, value: Any) -> Optional[str]:
+        match = self.REGEX_VPU_CAPABILITY.match(path)
+        if match:
+            device_id = int(match.group(1))
+            vpu_id = int(match.group(2))
+            scaler_id = int(match.group(3))
+            
+            device = self.get_device(device_id)
+            if device:
+                vpu = device.get_vpu(vpu_id)
+                if vpu:
+                    scaler = vpu.get_scaler(scaler_id)
+                    if scaler:
+                        scaler.capability = value
+                        self._notify_update()
+                        return f"[VPU] Device {device_id}, VPU {vpu_id}, Scaler {scaler_id}: capability={value}"
+        return None
+    
+    def _try_parse_vpu_screen(self, path: str, value: Any) -> Optional[str]:
+        match = self.REGEX_VPU_SCREEN.match(path)
+        if match:
+            device_id = int(match.group(1))
+            vpu_id = int(match.group(2))
+            scaler_id = int(match.group(3))
+            
+            device = self.get_device(device_id)
+            if device:
+                vpu = device.get_vpu(vpu_id)
+                if vpu:
+                    scaler = vpu.get_scaler(scaler_id)
+                    if scaler:
+                        # Value is like "S1", extract number
+                        if value and isinstance(value, str) and value.startswith("S"):
+                            scaler.screen = int(value[1:])
+                        else:
+                            scaler.screen = value
+                        self._notify_update()
+                        return f"[VPU] Device {device_id}, VPU {vpu_id}, Scaler {scaler_id}: screen={scaler.screen}"
+        return None
+    
+    def _try_parse_vpu_layer(self, path: str, value: Any) -> Optional[str]:
+        match = self.REGEX_VPU_LAYER.match(path)
+        if match:
+            device_id = int(match.group(1))
+            vpu_id = int(match.group(2))
+            scaler_id = int(match.group(3))
+            
+            device = self.get_device(device_id)
+            if device:
+                vpu = device.get_vpu(vpu_id)
+                if vpu:
+                    scaler = vpu.get_scaler(scaler_id)
+                    if scaler:
+                        # NATIVE = layer 1, otherwise value + 1
+                        if value == "NATIVE":
+                            scaler.layer = 1
+                        else:
+                            try:
+                                scaler.layer = int(value) + 1
+                            except (ValueError, TypeError):
+                                scaler.layer = value
+                        self._notify_update()
+                        return f"[VPU] Device {device_id}, VPU {vpu_id}, Scaler {scaler_id}: layer={scaler.layer}"
+        return None
+
+    def _try_parse_vpu_cutnfill_capa(self, path: str, value: Any) -> Optional[str]:
+        match = self.REGEX_VPU_CUTNFILL_CAPA.match(path)
+        if match:
+            device_id = int(match.group(1))
+            vpu_id = int(match.group(2))
+            scaler_id = int(match.group(3))
+
+            device = self.get_device(device_id)
+            if device:
+                vpu = device.get_vpu(vpu_id)
+                if vpu:
+                    scaler = vpu.get_scaler(scaler_id)
+                    if scaler:
+                        scaler.cutnfill_capa = value
+                        self._notify_update()
+                        return f"[VPU] Device {device_id}, VPU {vpu_id}, Scaler {scaler_id}: cutnfillCapa={value}"
+        return None
+
+    def _try_parse_vpu_seamless_capa(self, path: str, value: Any) -> Optional[str]:
+        match = self.REGEX_VPU_SEAMLESS_CAPA.match(path)
+        if match:
+            device_id = int(match.group(1))
+            vpu_id = int(match.group(2))
+            scaler_id = int(match.group(3))
+
+            device = self.get_device(device_id)
+            if device:
+                vpu = device.get_vpu(vpu_id)
+                if vpu:
+                    scaler = vpu.get_scaler(scaler_id)
+                    if scaler:
+                        scaler.seamless_capa = value
+                        self._notify_update()
+                        return f"[VPU] Device {device_id}, VPU {vpu_id}, Scaler {scaler_id}: seamlessCapa={value}"
+        return None
+
+    def _try_parse_vpu_channel(self, path: str, value: Any) -> Optional[str]:
+        match = self.REGEX_VPU_CHANNEL.match(path)
+        if match:
+            device_id = int(match.group(1))
+            vpu_id = int(match.group(2))
+            scaler_id = int(match.group(3))
+
+            device = self.get_device(device_id)
+            if device:
+                vpu = device.get_vpu(vpu_id)
+                if vpu:
+                    scaler = vpu.get_scaler(scaler_id)
+                    if scaler:
+                        scaler.channel = value
+                        self._notify_update()
+                        return f"[VPU] Device {device_id}, VPU {vpu_id}, Scaler {scaler_id}: channel={value}"
+        return None
+
+    def _try_parse_vpu_slice(self, path: str, value: Any) -> Optional[str]:
+        match = self.REGEX_VPU_SLICE.match(path)
+        if match:
+            device_id = int(match.group(1))
+            vpu_id = int(match.group(2))
+            scaler_id = int(match.group(3))
+
+            device = self.get_device(device_id)
+            if device:
+                vpu = device.get_vpu(vpu_id)
+                if vpu:
+                    scaler = vpu.get_scaler(scaler_id)
+                    if scaler:
+                        scaler.slice = value
+                        self._notify_update()
+                        return f"[VPU] Device {device_id}, VPU {vpu_id}, Scaler {scaler_id}: slice={value}"
+        return None
+
+    def _try_parse_scaler_pipe(self, path: str, value: Any) -> Optional[str]:
+        match = self.REGEX_SCALER_PIPE.match(path)
+        if match:
+            device_id = int(match.group(1))
+            vpu_id = int(match.group(2))
+            scaler_id = int(match.group(3))
+            pipe_id = int(match.group(4))
+            
+            device = self.get_device(device_id)
+            if device:
+                vpu = device.get_vpu(vpu_id)
+                if vpu:
+                    scaler = vpu.get_scaler(scaler_id)
+                    if scaler:
+                        scaler.pipes[pipe_id] = value
+                        self._notify_update()
+                        return f"[PIPE] Device {device_id}, VPU {vpu_id}, Scaler {scaler_id}, Pipe {pipe_id}: {value}"
+        return None
+    
+    def get_summary(self) -> str:
+        """Get a summary of the current model state."""
+        lines = ["=" * 60, "VPU VISUALIZER MODEL SUMMARY", "=" * 60]
+        
+        # Devices and VPUs
+        lines.append("\n[DEVICES]")
+        for device in self.devices:
+            if device.device_type:
+                lines.append(f"  Device {device.id}: {device.device_type} ({device.vpu_count} VPUs)")
+                for vpu in device.vpus:
+                    active = vpu.get_active_scalers_count()
+                    lines.append(f"    VPU {vpu.vpu_id}: {active}/16 scalers active ({vpu.get_usage_percentage():.0f}%)")
+                    for scaler in vpu.scalers:
+                        if scaler.is_enabled:
+                            pipes_str = ", ".join(f"P{p}={v}" for p, v in scaler.pipes.items() if v and v != "NONE")
+                            lines.append(f"      Scaler {scaler.id}: S{scaler.screen}/L{scaler.layer} cap={scaler.capability} [{pipes_str}]")
+        
+        # Screens
+        lines.append("\n[SCREENS]")
+        active_screens = [s for s in self.screens if s.active]
+        for screen in active_screens:
+            opt_str = " (optimized)" if screen.optimized else ""
+            lines.append(f"  Screen {screen.id}: {len(screen.layers)} layers{opt_str}")
+            for layer in screen.layers:
+                lines.append(f"    Layer {layer.id}: cap={layer.capability} mask={layer.mask}")
+        
+        lines.append("\n" + "=" * 60)
+        return "\n".join(lines)
