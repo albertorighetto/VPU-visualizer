@@ -66,8 +66,8 @@ class MainWindow(QMainWindow):
         self.tab_widget = QTabWidget()
 
         # Connection Tab
-        connection_tab = self.create_connection_tab()
-        self.tab_widget.addTab(connection_tab, "Connection")
+        self.connection_tab = self.create_connection_tab()
+        self.tab_widget.addTab(self.connection_tab, "Connection")
 
         # VPU Tab
         self.vpu_tab = QWidget()
@@ -136,7 +136,7 @@ class MainWindow(QMainWindow):
         self.screen_widgets = {}
 
         # Focus the Connection tab at opening
-        self.tab_widget.setCurrentWidget(connection_tab)
+        self.tab_widget.setCurrentWidget(self.connection_tab)
 
     def create_connection_tab(self) -> QWidget:
         """Create the connection settings tab."""
@@ -236,12 +236,30 @@ class MainWindow(QMainWindow):
             self.add_debug("[INFO] ========================================")
             self.add_debug("[INFO] MANUAL REFRESH - Fetching all data...")
             self.add_debug("[INFO] ========================================")
+            self.reset_session()
             self.client.initialize_connection()
-            
+
             # Request VPU data for all devices that have been initialized
             for device in self.model.devices:
                 if device.device_type and device.vpu_count > 0:
                     self.client.fetch_all_vpu_data(device.id, device.vpu_count)
+
+    def reset_session(self):
+        """Clear all cached device/VPU/screen state and widgets ahead of a fresh fetch."""
+        self.model.reset()
+
+        for widget in self.vpu_widgets.values():
+            widget.setParent(None)
+            widget.deleteLater()
+        self.vpu_widgets.clear()
+
+        for widget in self.screen_widgets.values():
+            widget.setParent(None)
+            widget.deleteLater()
+        self.screen_widgets.clear()
+
+        self.layers_table.populate_from_model()
+        self.summary_text.clear()
     
     @pyqtSlot()
     def on_connected(self):
@@ -253,8 +271,9 @@ class MainWindow(QMainWindow):
         self.status_bar.showMessage("Connected")
         self.ip_input.setEnabled(False)
         self.port_input.setEnabled(False)
+        self.reset_session()
         self.tab_widget.setCurrentWidget(self.vpu_tab)
-    
+
     @pyqtSlot()
     def on_disconnected(self):
         """Handle disconnection."""
@@ -265,6 +284,9 @@ class MainWindow(QMainWindow):
         self.status_bar.showMessage("Disconnected")
         self.ip_input.setEnabled(True)
         self.port_input.setEnabled(True)
+        # Go back to the Connection tab, but leave the VPU/screen tables as-is
+        # so the last known state stays visible until the next connect/refresh.
+        self.tab_widget.setCurrentWidget(self.connection_tab)
     
     @pyqtSlot(str)
     def on_error(self, message: str):

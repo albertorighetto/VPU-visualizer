@@ -22,12 +22,13 @@ class LayerCapability(Enum):
     K8 = "8K"
 
 
-# Device types and their VPU counts
-# Based on official app source VAR_ENUMS.DEV:
+# Device types and their VPU counts.
+# Verified against the live firmware's VAR_ENUMS.DEV (fetched from the
+# device's own web UI bundle) - this is the full and current set; there are
+# no legacy/short-name variants on this firmware.
 # RS1/RSALPHA=1VPU, RS2/RS3=2VPUs, RS4/RS5=3VPUs, RS6=4VPUs
 # C=2VPUs, CPLUS=3VPUs, CMAX=4VPUs, CMINI=1VPU
 DEVICE_VPU_COUNTS = {
-    # Official NLC_ prefixed names from app source
     "NLC_DBG": 1,        # Debug device
     "NLC_RS1": 1,        # Aquilon RS1 - 4U chassis
     "NLC_RS2": 2,        # Aquilon RS2 - 4U chassis
@@ -44,19 +45,33 @@ DEVICE_VPU_COUNTS = {
     "VDW_W": 2,          # VideoWall W - 4U chassis
     "VDW_WPLUS": 3,      # VideoWall W+ - 5U chassis
     "VDW_WMAX": 4,       # VideoWall Wmax - 6U chassis
-    # Legacy short names (without NLC_ prefix)
-    "RSALPHA": 1,
-    "RS1": 1,
-    "RS2": 2,
-    "RS3": 2,
-    "RS4": 3,
-    "RS5": 3,
-    "RS6": 4,
-    "C": 2,
-    "CPLUS": 3,
-    "CMAX": 4,
-    "CMINI": 1,
 }
+
+# Human-readable labels for device types, from the firmware's VAR_LABELS.DEV.
+DEVICE_LABELS = {
+    "NLC_DBG": "AQL DBG",
+    "NLC_RS1": "AQL RS1",
+    "NLC_RS2": "AQL RS2",
+    "NLC_RS3": "AQL RS3",
+    "NLC_RS4": "AQL RS4",
+    "NLC_C": "AQL C",
+    "NLC_CPLUS": "AQL C+",
+    "NLC_RSALPHA": "AQL RS alpha",
+    "NLC_RS5": "AQL RS5",
+    "NLC_RS6": "AQL RS6",
+    "NLC_CMAX": "AQL Cmax",
+    "VDW_W": "VDW_W",
+    "VDW_WPLUS": "VDW_W+",
+    "VDW_WMAX": "VDW_WMAX",
+    "NLC_CMINI": "AQL Cmini",
+}
+
+
+def get_device_label(device_type: Optional[str]) -> str:
+    """Get the human-readable label for a device type, falling back to the raw type."""
+    if not device_type:
+        return "?"
+    return DEVICE_LABELS.get(device_type, device_type)
 
 
 @dataclass
@@ -220,6 +235,12 @@ class VPUModel:
         for callback in self._callbacks:
             callback()
     
+    def reset(self):
+        """Reset all device, VPU, and screen state to a clean slate."""
+        self.devices = [Device(id=i) for i in range(1, 5)]
+        self.screens = [Screen(id=i) for i in range(1, 25)]
+        self._notify_update()
+
     def get_device(self, device_id: int) -> Optional[Device]:
         """Get device by ID (1-4)."""
         for device in self.devices:
@@ -587,7 +608,7 @@ class VPUModel:
         lines.append("\n[DEVICES]")
         for device in self.devices:
             if device.device_type:
-                lines.append(f"  Device {device.id}: {device.device_type} ({device.vpu_count} VPUs)")
+                lines.append(f"  Device {device.id}: {get_device_label(device.device_type)} ({device.vpu_count} VPUs)")
                 for vpu in device.vpus:
                     active = vpu.get_active_scalers_count()
                     lines.append(f"    VPU {vpu.vpu_id}: {active}/16 scalers active ({vpu.get_usage_percentage():.0f}%)")

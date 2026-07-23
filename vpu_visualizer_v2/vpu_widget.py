@@ -14,7 +14,7 @@ from PyQt6.QtGui import QBrush as QtBrush
 from PyQt6.QtCore import Qt, QSize, pyqtSignal, QEvent
 from PyQt6.QtGui import QPainter, QColor, QBrush, QPen, QFont, QPainterPath
 
-from vpu_model import Device, VPU, Scaler, Screen, Layer
+from vpu_model import Device, VPU, Scaler, Screen, Layer, get_device_label
 
 
 # Color scheme from official app analysis
@@ -214,7 +214,9 @@ class PipeCellWidget(QFrame):
         self.highlight_slice_match = False
         self.text_color = COLORS['text_primary']
 
-        self.setFixedSize(self.CELL_SIZE * len(self.pipe_ids), self.CELL_SIZE)
+        self.setFixedHeight(self.CELL_SIZE)
+        self.setMinimumWidth(self.CELL_SIZE * len(self.pipe_ids))
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.setFrameStyle(QFrame.Shape.Box)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setMouseTracking(True)
@@ -317,6 +319,8 @@ class PipeCellWidget(QFrame):
         super().paintEvent(event)
 
         if not self.is_used():
+            if len(self.pipe_ids) > 1:
+                self._paint_empty_dividers()
             return
 
         painter = QPainter(self)
@@ -338,6 +342,23 @@ class PipeCellWidget(QFrame):
             painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, text)
         else:
             painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, str(self.scaler.id))
+
+        painter.end()
+
+    def _paint_empty_dividers(self):
+        """Draw thin vertical lines at each pipe boundary inside a merged empty
+        cell, so the number of joined (unused) pipes stays visible."""
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        pen = QPen(QColor(COLORS['status_inactive']))
+        pen.setWidth(1)
+        painter.setPen(pen)
+
+        segment_width = self.width() / len(self.pipe_ids)
+        for i in range(1, len(self.pipe_ids)):
+            x = round(segment_width * i)
+            painter.drawLine(x, 3, x, self.height() - 3)
 
         painter.end()
 
@@ -388,7 +409,7 @@ class VPUWidget(QFrame):
         
         # Device type
         if self.device.device_type:
-            type_label = QLabel(f"({self.device.device_type})")
+            type_label = QLabel(f"({get_device_label(self.device.device_type)})")
             type_label.setStyleSheet(f"color: {COLORS['text_muted']}; font-size: 10px;")
             type_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
             layout.addWidget(type_label)
@@ -400,16 +421,17 @@ class VPUWidget(QFrame):
         matrix_layout.setContentsMargins(0, 0, 0, 0)
         matrix_layout.setSpacing(4)
 
-        # Column headers
+        # Column headers (stretch evenly so they always fill the VPU's width,
+        # matching the proportional stretch used by the mixer rows below)
         header_row = QHBoxLayout()
         header_row.setSpacing(0)
         for pipe_id in range(1, 9):
             pipe_header = QLabel(f"P{pipe_id}")
-            pipe_header.setFixedWidth(32)
+            pipe_header.setMinimumWidth(PipeCellWidget.CELL_SIZE)
+            pipe_header.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
             pipe_header.setAlignment(Qt.AlignmentFlag.AlignCenter)
             pipe_header.setStyleSheet(f"color: {COLORS['text_muted']}; font-size: 9px;")
-            header_row.addWidget(pipe_header)
-        header_row.addStretch()
+            header_row.addWidget(pipe_header, 1)
         matrix_layout.addLayout(header_row)
 
         # Container for the mixer rows, rebuilt whenever pipe usage changes
@@ -485,9 +507,10 @@ class VPUWidget(QFrame):
                     pipe_widget.cell_hovered.connect(self.cell_hovered)
                     pipe_widget.cell_left.connect(self.cell_left)
                     self.pipe_widgets.append(pipe_widget)
-                    row_layout.addWidget(pipe_widget)
+                    # Stretch proportional to how many pipe columns this cell spans,
+                    # so the row always stretches to fill the VPU's width.
+                    row_layout.addWidget(pipe_widget, len(pipe_run))
 
-                row_layout.addStretch()
                 pair_layout.addLayout(row_layout)
 
             self.rows_layout.addWidget(pair_frame)
