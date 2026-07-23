@@ -1,0 +1,54 @@
+name: Build VPU Visualizer
+
+# Builds standalone executables for Windows, Linux and macOS.
+# PyInstaller cannot cross-compile, so each OS builds its own binary;
+# trigger this from Windows (push a tag or run manually) and download
+# the artifacts for all three platforms.
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            artifact: VPU-Visualizer-windows
+          - os: ubuntu-latest
+            artifact: VPU-Visualizer-linux
+          - os: macos-latest
+            artifact: VPU-Visualizer-macos
+
+    runs-on: ${{ matrix.os }}
+
+    defaults:
+      run:
+        working-directory: vpu_visualizer_v2
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pyinstaller
+
+      - name: Build
+        run: pyinstaller --noconfirm vpu_visualizer.spec
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: |
+            vpu_visualizer_v2/dist/VPU-Visualizer*
+          if-no-files-found: error

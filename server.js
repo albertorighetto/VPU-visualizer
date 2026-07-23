@@ -47,19 +47,32 @@ const device_vpus = {
     CPLUS: 3,
     CMAX: 4
 }
-
+/*
+List of useful API path examples:
+DeviceObject/preconfig/resources/current/status/mapping/deviceList/@items/1/pipeList/@items/1/@props/isUsed
+DeviceObject/preconfig/resources/current/status/mapping/deviceList/@items/1/vpuLayerList/@items/PROC_1_SCALER_1/@props/isEnabled
+DeviceObject/preconfig/resources/current/status/mapping/deviceList/@items/1/vpuLayerList/@items/PROC_1_SCALER_1/scalerAllocation/@props/usedOnOutPipe1
+*/
 // Regular expression to extract PROC_# and SCALER_#
 const regex_active_screens =    /DeviceObject\/preconfig\/resources\/new\/\$screen\/@items\/S([0-9]+)\/status\/@props\/mode/;
 const regex_active_layers =     /DeviceObject\/preconfig\/resources\/new\/\$screen\/@items\/S([0-9]+)\/status\/@props\/layerCount/;
 const regex_screen_optimized =  /DeviceObject\/preconfig\/resources\/new\/\$screen\/@items\/S([0-9]+)\/status\/@props\/isOptimized/;
 const regex_layer_capability =  /DeviceObject\/preconfig\/resources\/new\/\$screen\/@items\/S([0-9]+)\/\$layer\/@items\/([0-9]+)\/status\/@props\/capability/;
 const regex_layer_regions =     /DeviceObject\/preconfig\/resources\/new\/\$screen\/@items\/S([0-9]+)\/\$layer\/@items\/([0-9]+)\/status\/@props\/usedInRegions/;
+//['device']['preconfig']['resources']['current']['screenList']['items']['S1']['layerList']['items']['1']['status']['pp']['isGhost']
+//['device']['preconfig']['resources']['current']['screenList']['items']['S1']['layerList']['items']['1']['status']['pp']['scope']
 const regex_layer_mask =        /DeviceObject\/preconfig\/resources\/new\/\$screen\/@items\/S([0-9]+)\/\$layer\/@items\/([0-9]+)\/status\/@props\/canUseMask/;
 const regex_scaler =            /DeviceObject\/preconfig\/resources\/new\/status\/mapping\/\$device\/@items\/([1-4])\/\$vpuLayer\/@items\/PROC_([1-4])_SCALER_([1-8])\/@props\/isEnabled/;
+
+//                               DeviceObject/preconfig/resources/current/status/mapping/deviceList/@items/1/vpuLayerList/@items/PROC_1_SCALER_1/scalerAllocation/@props/usedOnOutPipe1
 const regex_pipe =              /DeviceObject\/preconfig\/resources\/new\/status\/mapping\/\$device\/@items\/([1-4])\/\$vpuLayer\/@items\/PROC_([1-4])_SCALER_([1-8])\/scalerAllocation\/@props\/usedOnOutPipe([1-8])/;
 const regex_layer =             /DeviceObject\/preconfig\/resources\/new\/status\/mapping\/\$device\/@items\/([1-4])\/\$vpuLayer\/@items\/PROC_([1-4])_SCALER_([1-8])\/@props\/usedInLayer/;
 const regex_scaler_screen =     /DeviceObject\/preconfig\/resources\/new\/status\/mapping\/\$device\/@items\/([1-4])\/\$vpuLayer\/@items\/PROC_([1-4])_SCALER_([1-8])\/@props\/usedInScreen/;
 const regex_capability =        /DeviceObject\/preconfig\/resources\/new\/status\/mapping\/\$device\/@items\/([1-4])\/\$vpuLayer\/@items\/PROC_([1-4])_SCALER_([1-8])\/@props\/capability/;
+//['device']['preconfig']['resources']['current']['status']['mapping']['deviceList']['items']['1']['vpuLayerList']['items']['PROC_1_SCALER_1']['pp']['isAvailable']
+// VPU DISPONIBILI IN QUESTO DEVICE
+//['device']['system']['deviceList']['items']['1']['hardware']['cardList']['items']['PROC_4']['pp']['isAvailable']
+
 const regex_device_type =       /DeviceObject\/system\/\$device\/@items\/([1-4])\/@props\/dev/;
 
 const empty_devices_list = [
@@ -114,6 +127,7 @@ function connectAWJ() {
         
         // First we get enabled screens and their data
         for(let screen = 1; screen <= 24; screen++) {
+            //{"op":"get","path":"DeviceObject/preconfig/resources/new/\$screen/@items/S1/status/@props/mode"}
             message = `{"op":"get","path":"DeviceObject/preconfig/resources/new/\$screen/@items/S${screen}/status/@props/mode"}`
             awj.write(message + eotChar);
         }

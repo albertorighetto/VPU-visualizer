@@ -195,47 +195,67 @@ class Screen:
 
 
 class VPUModel:
-    """Main data model for VPU Visualizer."""
-    
-    # Regex patterns for parsing AWJ responses
-    # Updated patterns based on app source analysis
+    """Main data model for VPU Visualizer.
+
+    Parses paths for a selectable configuration resource tree ("new" = pending
+    config, "current" = running config); messages addressing the other tree
+    are ignored so switching config views never mixes data.
+    """
+
+    # Device type is not resource-dependent
     REGEX_DEVICE_TYPE = re.compile(r"DeviceObject/system/\$device/@items/(\d+)/@props/dev")
-    REGEX_SCREEN_MODE = re.compile(r"DeviceObject/preconfig/resources/new/\$screen/@items/S(\d+)/status/@props/mode")
-    REGEX_SCREEN_LAYER_COUNT = re.compile(r"DeviceObject/preconfig/resources/new/\$screen/@items/S(\d+)/status/@props/layerCount")
-    REGEX_SCREEN_OPTIMIZED = re.compile(r"DeviceObject/preconfig/resources/new/\$screen/@items/S(\d+)/status/@props/isOptimized")
-    REGEX_LAYER_CAPABILITY = re.compile(r"DeviceObject/preconfig/resources/new/\$screen/@items/S(\d+)/\$layer/@items/(\d+)/status/@props/capability")
-    REGEX_LAYER_REGIONS = re.compile(r"DeviceObject/preconfig/resources/new/\$screen/@items/S(\d+)/\$layer/@items/(\d+)/status/@props/usedInRegions")
-    REGEX_LAYER_MASK = re.compile(r"DeviceObject/preconfig/resources/new/\$screen/@items/S(\d+)/\$layer/@items/(\d+)/status/@props/canUseMask")
-    
-    # VPU Mixer patterns - live AWJ protocol node name is $vpuMixer (the web UI's
-    # internal Redux naming uses $vpuLayer, but the device rejects that path)
-    REGEX_VPU_ENABLED = re.compile(r"DeviceObject/preconfig/resources/new/status/mapping/\$device/@items/(\d+)/\$vpuMixer/@items/PROC_(\d+)_MIXER_(\d+)/@props/isEnabled")
-    REGEX_VPU_AVAILABLE = re.compile(r"DeviceObject/preconfig/resources/new/status/mapping/\$device/@items/(\d+)/\$vpuMixer/@items/PROC_(\d+)_MIXER_(\d+)/@props/isAvailable")
-    REGEX_VPU_CAPABILITY = re.compile(r"DeviceObject/preconfig/resources/new/status/mapping/\$device/@items/(\d+)/\$vpuMixer/@items/PROC_(\d+)_MIXER_(\d+)/@props/capability")
-    REGEX_VPU_SCREEN = re.compile(r"DeviceObject/preconfig/resources/new/status/mapping/\$device/@items/(\d+)/\$vpuMixer/@items/PROC_(\d+)_MIXER_(\d+)/@props/usedInScreen")
-    REGEX_VPU_LAYER = re.compile(r"DeviceObject/preconfig/resources/new/status/mapping/\$device/@items/(\d+)/\$vpuMixer/@items/PROC_(\d+)_MIXER_(\d+)/@props/usedInLayer")
-    REGEX_VPU_CUTNFILL_CAPA = re.compile(r"DeviceObject/preconfig/resources/new/status/mapping/\$device/@items/(\d+)/\$vpuMixer/@items/PROC_(\d+)_MIXER_(\d+)/@props/cutnfillCapa")
-    REGEX_VPU_SEAMLESS_CAPA = re.compile(r"DeviceObject/preconfig/resources/new/status/mapping/\$device/@items/(\d+)/\$vpuMixer/@items/PROC_(\d+)_MIXER_(\d+)/@props/seamlessCapa")
-    REGEX_VPU_CHANNEL = re.compile(r"DeviceObject/preconfig/resources/new/status/mapping/\$device/@items/(\d+)/\$vpuMixer/@items/PROC_(\d+)_MIXER_(\d+)/@props/channel")
-    REGEX_VPU_SLICE = re.compile(r"DeviceObject/preconfig/resources/new/status/mapping/\$device/@items/(\d+)/\$vpuMixer/@items/PROC_(\d+)_MIXER_(\d+)/@props/slice")
 
-    # Mixer allocation pipe pattern (mixerAllocation, not the web UI's scalerAllocation)
-    REGEX_SCALER_PIPE = re.compile(r"DeviceObject/preconfig/resources/new/status/mapping/\$device/@items/(\d+)/\$vpuMixer/@items/PROC_(\d+)_MIXER_(\d+)/mixerAllocation/@props/usedOnOutPipe(\d+)")
-
-    def __init__(self):
+    def __init__(self, resource: str = "new"):
         self.devices: List[Device] = [Device(id=i) for i in range(1, 5)]
         self.screens: List[Screen] = [Screen(id=i) for i in range(1, 25)]
         self._callbacks: List[callable] = []
-    
+        self.version = 0  # bumped on every model change; UI panels poll this
+        self.resource = resource
+        self._compile_patterns(resource)
+
+    def set_resource(self, resource: str):
+        """Switch between the 'new' (pending) and 'current' (running) config trees."""
+        self.resource = resource
+        self._compile_patterns(resource)
+
+    def _compile_patterns(self, resource: str):
+        """(Re)compile all resource-dependent path patterns."""
+        res = re.escape(resource)
+        screen = rf"DeviceObject/preconfig/resources/{res}/\$screen/@items/S(\d+)"
+        # Live AWJ protocol node name is $vpuMixer (the web UI's internal Redux
+        # naming uses $vpuLayer, but the device rejects that path)
+        mixer = (rf"DeviceObject/preconfig/resources/{res}/status/mapping/\$device"
+                 rf"/@items/(\d+)/\$vpuMixer/@items/PROC_(\d+)_MIXER_(\d+)")
+
+        self.REGEX_SCREEN_MODE = re.compile(rf"{screen}/status/@props/mode")
+        self.REGEX_SCREEN_LAYER_COUNT = re.compile(rf"{screen}/status/@props/layerCount")
+        self.REGEX_SCREEN_OPTIMIZED = re.compile(rf"{screen}/status/@props/isOptimized")
+        self.REGEX_LAYER_CAPABILITY = re.compile(rf"{screen}/\$layer/@items/(\d+)/status/@props/capability")
+        self.REGEX_LAYER_REGIONS = re.compile(rf"{screen}/\$layer/@items/(\d+)/status/@props/usedInRegions")
+        self.REGEX_LAYER_MASK = re.compile(rf"{screen}/\$layer/@items/(\d+)/status/@props/canUseMask")
+
+        self.REGEX_VPU_ENABLED = re.compile(rf"{mixer}/@props/isEnabled")
+        self.REGEX_VPU_AVAILABLE = re.compile(rf"{mixer}/@props/isAvailable")
+        self.REGEX_VPU_CAPABILITY = re.compile(rf"{mixer}/@props/capability")
+        self.REGEX_VPU_SCREEN = re.compile(rf"{mixer}/@props/usedInScreen")
+        self.REGEX_VPU_LAYER = re.compile(rf"{mixer}/@props/usedInLayer")
+        self.REGEX_VPU_CUTNFILL_CAPA = re.compile(rf"{mixer}/@props/cutnfillCapa")
+        self.REGEX_VPU_SEAMLESS_CAPA = re.compile(rf"{mixer}/@props/seamlessCapa")
+        self.REGEX_VPU_CHANNEL = re.compile(rf"{mixer}/@props/channel")
+        self.REGEX_VPU_SLICE = re.compile(rf"{mixer}/@props/slice")
+        # mixerAllocation, not the web UI's scalerAllocation
+        self.REGEX_SCALER_PIPE = re.compile(rf"{mixer}/mixerAllocation/@props/usedOnOutPipe(\d+)")
+
     def add_update_callback(self, callback: callable):
         """Add a callback to be called when data is updated."""
         self._callbacks.append(callback)
-    
+
     def _notify_update(self):
         """Notify all callbacks of data update."""
+        self.version += 1
         for callback in self._callbacks:
             callback()
-    
+
     def reset(self):
         """Reset all device, VPU, and screen state to a clean slate."""
         self.devices = [Device(id=i) for i in range(1, 5)]
@@ -601,6 +621,54 @@ class VPUModel:
                         return f"[PIPE] Device {device_id}, VPU {vpu_id}, Scaler {scaler_id}, Pipe {pipe_id}: {value}"
         return None
     
+    def active_devices(self) -> List[Device]:
+        """Devices that are present in the system (typed, not the debug stub)."""
+        return [d for d in self.devices
+                if d.device_type and d.device_type != "NLC_DBG" and d.vpu_count > 0]
+
+    def active_screens(self) -> List[Screen]:
+        return [s for s in self.screens if s.active]
+
+    def get_layer_mappings(self, screen_id: int, layer_id: int):
+        """All (device, vpu, scaler) triples where an enabled mixer serves the
+        given screen/layer - the join between the screen view and the VPU map."""
+        results = []
+        for device in self.active_devices():
+            for vpu in device.vpus:
+                for scaler in vpu.scalers:
+                    if (scaler.is_enabled and scaler.screen == screen_id
+                            and scaler.layer == layer_id):
+                        results.append((device, vpu, scaler))
+        return results
+
+    def get_stats(self) -> dict:
+        """Aggregate counters for the overview strip."""
+        devices = self.active_devices()
+        vpus = sum(d.vpu_count for d in devices)
+        mixers_used = 0
+        mixers_total = 0
+        pipes_used = set()
+        for device in devices:
+            for vpu in device.vpus:
+                mixers_total += len(vpu.scalers)
+                for scaler in vpu.scalers:
+                    if scaler.is_enabled:
+                        mixers_used += 1
+                    for value in scaler.pipes.values():
+                        if value and value != "NONE":
+                            pipes_used.add((device.id, str(value)))
+        screens = self.active_screens()
+        layers = sum(len(s.layers) for s in screens)
+        return {
+            "devices": len(devices),
+            "vpus": vpus,
+            "mixers_used": mixers_used,
+            "mixers_total": mixers_total,
+            "pipes_used": len(pipes_used),
+            "screens": len(screens),
+            "layers": layers,
+        }
+
     def get_summary(self) -> str:
         """Get a summary of the current model state."""
         lines = ["=" * 60, "VPU VISUALIZER MODEL SUMMARY", "=" * 60]

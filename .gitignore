@@ -128,3 +128,28 @@ dist
 .yarn/build-state.yml
 .yarn/install-state.gz
 .pnp.*
+vpu_visualizer_v2/__pycache__/
+public/cap1 - Copy.png
+public/cap2 - Copy.png
+public/cf - Copy.png
+.vscode/launch.json
+.gitignore
+app_source.js
+AWJ-Get.exe
+fw6.json
+icon.ico
+icon.png
+package-lock.json
+rcedit.exe
+rcedit.txt
+server.js
+VPU-visualizer-1.0.0-linux
+VPU-visualizer-1.0.0-macos
+VPU-visualizer-1.0.0-win.exe
+VPU-visualizer-1.0.1-win.exe
+VPU-visualizer-1.0.2-win.exe
+VPU-visualizer-1.0.3-win.exe
+VPU-visualizer-1.0.4-macos
+VPU-visualizer-1.0.4-win.exe
+VPU-visualizer-macos
+server.js

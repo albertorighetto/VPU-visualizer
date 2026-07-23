@@ -1,91 +1,59 @@
 # VPU Visualizer 2.0
 
-A desktop application for visualizing VPU (Video Processing Unit) usage on Analog Way Aquilon devices.
+A desktop application for visualizing VPU (Video Processing Unit) usage on Analog Way Aquilon devices, over the AWJ TCP protocol (port 10606).
+
+See [ARCHITECTURE.md](ARCHITECTURE.md) for how Device → Proc → Mixer → Scaler → Pipe relate inside the firmware and which protocol paths the app uses.
 
 ## Features
 
-- Real-time VPU usage monitoring
-- Screen and layer visualization
-- Dark theme UI inspired by official software
-- Debug logging for troubleshooting
-- Support for multiple device types (RS1-RS6, C, C+, C-Max)
+- **VPU Map** — per-VPU mixer/pipe matrix (16 mixers × 8 out-pipe slots), color-coded by screen/layer, with capability borders and cross-VPU hover highlighting. Cards reflow with the window size; hovering a card highlights every VPU of the same device.
+- **Screens & Layers** — merged view with a summary strip (devices, VPUs, mixers/pipes in use, screens, layers), searchable and filterable per-layer rows with capability icons, mask/region chips, and each layer's VPU mapping (device / VPU / mixer / pipes).
+- **Pending vs Current config** — header switch between the pending configuration (API resource `new`) and the running configuration (API resource `current`).
+- **Connection as a setting** — gear button opens the connection dialog (address persisted); the header pill shows state: disconnected / connecting / connected, active config, and live-update status (AWJ subscriptions).
+- **Log** — timestamped, searchable (include/exclude text, case toggle), tag-filterable protocol log with autoscroll follow mode.
 
-## Installation
+## Running from source
 
-1. Install dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
+```bash
+pip install -r requirements.txt
+python main.py
+```
 
-2. Run the application:
-   ```bash
-   python main.py
-   ```
+1. Click the gear (⚙) to set the device IP and port (defaults 127.0.0.1:10606), or just hit **Connect** to use the saved address.
+2. Pick **Pending** or **Current** in the header to choose which configuration tree to inspect. Switching re-fetches and re-subscribes.
+3. The app subscribes to AWJ updates, so changes on the device appear live.
 
-## Usage
+## Building executables
 
-1. Enter the IP address of your Aquilon device (default: 127.0.0.1)
-2. Enter the TCP port (default: 10606)
-3. Click "Connect" to establish connection
-4. View VPU usage in the "VPU Usage" tab
-5. View active screens in the "Screens" tab
-6. View summary in the "Summary" tab
+PyInstaller builds a standalone binary for the OS it runs on — it cannot cross-compile. Two options:
 
-## API Paths Reference
+- **Local build** (current OS only):
 
-The application communicates with Aquilon devices using the AWJ protocol. Key API paths:
+  ```bash
+  pip install pyinstaller
+  pyinstaller vpu_visualizer.spec
+  # result in dist/
+  ```
 
-### Device Information
-- `DeviceObject/system/$device/@items/{device_id}/@props/dev` - Device type
+- **All three OSes from Windows**: push a `v*` tag (or run the workflow manually from the Actions tab). `.github/workflows/build.yml` builds Windows, Linux and macOS binaries in parallel and publishes them as downloadable artifacts.
 
-### Screen Information
-- `DeviceObject/preconfig/resources/new/$screen/@items/S{id}/status/@props/mode` - Screen mode
-- `DeviceObject/preconfig/resources/new/$screen/@items/S{id}/status/@props/layerCount` - Layer count
-- `DeviceObject/preconfig/resources/new/$screen/@items/S{id}/status/@props/isOptimized` - Optimization status
+## Code map
 
-### VPU Layer Information
-- `DeviceObject/preconfig/resources/new/status/mapping/$device/@items/{device_id}/$vpu-layer/@items/PROC_{vpu}_SCALER_{scaler}/@props/isEnabled`
-- `DeviceObject/preconfig/resources/new/status/mapping/$device/@items/{device_id}/$vpu-layer/@items/PROC_{vpu}_SCALER_{scaler}/@props/isAvailable`
-- `DeviceObject/preconfig/resources/new/status/mapping/$device/@items/{device_id}/$vpu-layer/@items/PROC_{vpu}_SCALER_{scaler}/@props/capability`
-- `DeviceObject/preconfig/resources/new/status/mapping/$device/@items/{device_id}/$vpu-layer/@items/PROC_{vpu}_SCALER_{scaler}/@props/usedInScreen`
-- `DeviceObject/preconfig/resources/new/status/mapping/$device/@items/{device_id}/$vpu-layer/@items/PROC_{vpu}_SCALER_{scaler}/@props/usedInLayer`
+| File | Role |
+|------|------|
+| `main.py` | Entry point, applies theme |
+| `theme.py` | Palette, app stylesheet, chip/resource helpers |
+| `main_window.py` | Header (config switch, status pill, connect, settings), tabs |
+| `awj_client.py` | AWJ TCP client; resource-aware paths (`new`/`current`), subscriptions |
+| `vpu_model.py` | Data model + AWJ path parsing (resource-aware), stats, layer↔mixer join |
+| `vpu_widget.py` | VPU card and pipe-cell matrix |
+| `screens_panel.py` | Merged Screens + Layers + Summary view |
+| `log_panel.py` | Filterable log (model/view + proxy filter) |
+| `connection_dialog.py` | Connection settings dialog |
+| `flow_layout.py` | Responsive wrapping layout for cards |
 
-### Scaler Allocation
-- `DeviceObject/preconfig/resources/new/status/mapping/$device/@items/{device_id}/$vpu-layer/@items/PROC_{vpu}_SCALER_{scaler}/scaler-allocation/@props/usedOnOutPipe{pipe}`
+## Protocol notes
 
-### Pipe Information
-- `DeviceObject/preconfig/resources/new/status/mapping/$device/@items/{device_id}/$pipe/@items/{pipe_id}/@props/isUsed`
-
-## Layer Capabilities
-
-Based on the official software, layer capabilities include:
-- OFF - Layer disabled
-- DUAL - Dual capability
-- 4K - 4K resolution
-- 5K - 5K resolution
-- 8K - 8K resolution
-
-## Color Scheme
-
-The application uses a dark theme with colors derived from the official software:
-- Primary accent: #2e3192
-- Highlight: #826bff
-- Active status: #8bb650
-- Warning: #e6b421
-- Error: #cc2e60
-
-## Device Types and VPU Counts
-
-| Device Type | VPU Count |
-|-------------|-----------|
-| RS1/RSALPHA | 1 |
-| RS2/RS3 | 2 |
-| RS4/RS5 | 3 |
-| RS6 | 4 |
-| C | 2 |
-| C+ | 3 |
-| C-Max | 4 |
-
-## License
-
-This project is for educational and development purposes.
+- The live AWJ TCP protocol uses `$vpuMixer` / `mixerAllocation` path segments (the device's own web UI internally calls these `$vpuLayer` / `scalerAllocation`, but the TCP API rejects those — see ARCHITECTURE.md §5).
+- Pending config lives under `DeviceObject/preconfig/resources/new/…`, running config under `…/resources/current/…`.
+- Messages are JSON terminated by an EOT character (`\u0004`).
