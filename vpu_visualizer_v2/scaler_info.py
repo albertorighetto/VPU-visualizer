@@ -174,7 +174,7 @@ def get_processor_available(conn: AWJConnection, device_id: int, proc_id: int) -
 def get_scaler_properties(conn: AWJConnection, device_id: int, proc_id: int, scaler_id: int) -> ScalerInfo:
     """Get all properties for a scaler (mixer)."""
     scaler = ScalerInfo(proc_id=proc_id, scaler_id=scaler_id)
-    # Multi-device firmware: $vpuMixer (not $vpuLayer/$vpu-layer), MIXER (not SCALER)
+    # Live AWJ protocol node name is $vpuMixer, not the web UI's $vpuLayer
     base_path = f"DeviceObject/preconfig/resources/new/status/mapping/$device/@items/{device_id}/$vpuMixer/@items/PROC_{proc_id}_MIXER_{scaler_id}"
 
     # Request all properties at once
@@ -182,7 +182,7 @@ def get_scaler_properties(conn: AWJConnection, device_id: int, proc_id: int, sca
     for prop in properties:
         conn.send_get(f"{base_path}/@props/{prop}")
 
-    # Request pipe usage - mixerAllocation (not scaler-allocation/scalerAllocation)
+    # Request pipe usage - mixerAllocation
     for pipe_id in range(1, 9):
         conn.send_get(f"{base_path}/mixerAllocation/@props/usedOnOutPipe{pipe_id}")
 

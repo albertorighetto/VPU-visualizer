@@ -207,7 +207,8 @@ class VPUModel:
     REGEX_LAYER_REGIONS = re.compile(r"DeviceObject/preconfig/resources/new/\$screen/@items/S(\d+)/\$layer/@items/(\d+)/status/@props/usedInRegions")
     REGEX_LAYER_MASK = re.compile(r"DeviceObject/preconfig/resources/new/\$screen/@items/S(\d+)/\$layer/@items/(\d+)/status/@props/canUseMask")
     
-    # VPU Mixer patterns - multi-device firmware uses $vpuMixer / MIXER naming
+    # VPU Mixer patterns - live AWJ protocol node name is $vpuMixer (the web UI's
+    # internal Redux naming uses $vpuLayer, but the device rejects that path)
     REGEX_VPU_ENABLED = re.compile(r"DeviceObject/preconfig/resources/new/status/mapping/\$device/@items/(\d+)/\$vpuMixer/@items/PROC_(\d+)_MIXER_(\d+)/@props/isEnabled")
     REGEX_VPU_AVAILABLE = re.compile(r"DeviceObject/preconfig/resources/new/status/mapping/\$device/@items/(\d+)/\$vpuMixer/@items/PROC_(\d+)_MIXER_(\d+)/@props/isAvailable")
     REGEX_VPU_CAPABILITY = re.compile(r"DeviceObject/preconfig/resources/new/status/mapping/\$device/@items/(\d+)/\$vpuMixer/@items/PROC_(\d+)_MIXER_(\d+)/@props/capability")
@@ -218,7 +219,7 @@ class VPUModel:
     REGEX_VPU_CHANNEL = re.compile(r"DeviceObject/preconfig/resources/new/status/mapping/\$device/@items/(\d+)/\$vpuMixer/@items/PROC_(\d+)_MIXER_(\d+)/@props/channel")
     REGEX_VPU_SLICE = re.compile(r"DeviceObject/preconfig/resources/new/status/mapping/\$device/@items/(\d+)/\$vpuMixer/@items/PROC_(\d+)_MIXER_(\d+)/@props/slice")
 
-    # Mixer allocation pipe pattern
+    # Mixer allocation pipe pattern (mixerAllocation, not the web UI's scalerAllocation)
     REGEX_SCALER_PIPE = re.compile(r"DeviceObject/preconfig/resources/new/status/mapping/\$device/@items/(\d+)/\$vpuMixer/@items/PROC_(\d+)_MIXER_(\d+)/mixerAllocation/@props/usedOnOutPipe(\d+)")
 
     def __init__(self):

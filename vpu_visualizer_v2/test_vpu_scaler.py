@@ -89,7 +89,7 @@ def main():
         print("STEP 3: Get VPU Mixer Properties (PROC_1_MIXER_1)")
         print("=" * 80)
 
-        # Multi-device firmware: $vpuMixer / MIXER naming
+        # Live AWJ protocol node name is $vpuMixer, not the web UI's $vpuLayer
         base_path = f"DeviceObject/preconfig/resources/new/status/mapping/$device/@items/{DEVICE_ID}/$vpuMixer/@items/PROC_{VPU_ID}_MIXER_{SCALER_ID}"
         
         properties = [

@@ -183,7 +183,7 @@ class AWJClient(QObject):
     
     def get_vpu_layer_enabled(self, device_id: int, vpu_id: int, mixer_id: int):
         """Get VPU mixer enabled status."""
-        # Multi-device firmware: $vpuMixer (not $vpu-layer), MIXER (not SCALER)
+        # Live AWJ protocol node name is $vpuMixer, not the web UI's $vpuLayer
         path = f"DeviceObject/preconfig/resources/new/status/mapping/$device/@items/{device_id}/$vpuMixer/@items/PROC_{vpu_id}_MIXER_{mixer_id}/@props/isEnabled"
         self.send_get(path)
 
@@ -229,7 +229,7 @@ class AWJClient(QObject):
 
     def get_scaler_pipe_usage(self, device_id: int, vpu_id: int, mixer_id: int, pipe_id: int):
         """Get mixer pipe usage for output pipe."""
-        # Multi-device firmware: mixerAllocation (not scaler-allocation)
+        # Live AWJ protocol node name is mixerAllocation, not the web UI's scalerAllocation
         path = f"DeviceObject/preconfig/resources/new/status/mapping/$device/@items/{device_id}/$vpuMixer/@items/PROC_{vpu_id}_MIXER_{mixer_id}/mixerAllocation/@props/usedOnOutPipe{pipe_id}"
         self.send_get(path)
 
