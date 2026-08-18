@@ -35,7 +35,7 @@ PyInstaller builds a standalone binary for the OS it runs on — it cannot cross
   # result in dist/
   ```
 
-- **All three OSes from Windows**: push a `v*` tag (or run the workflow manually from the Actions tab). `.github/workflows/build.yml` builds Windows, Linux and macOS binaries in parallel and publishes them as downloadable artifacts.
+- **Windows + macOS from CI**: push a `v*` tag (or run the workflow manually from the Actions tab). `.github/workflows/build.yml` builds Windows and macOS (Intel + Apple Silicon) binaries in parallel and publishes them as downloadable artifacts.
 
 ## Code map
 

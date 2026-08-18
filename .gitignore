@@ -12,3 +12,6 @@ dist/
 # Editor/OS
 .vscode/
 .DS_Store
+
+PNG/
+SVG/
