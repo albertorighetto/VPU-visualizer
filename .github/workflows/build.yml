@@ -29,10 +29,6 @@ jobs:
 
     runs-on: ${{ matrix.os }}
 
-    defaults:
-      run:
-        working-directory: vpu_visualizer_v2
-
     steps:
       - uses: actions/checkout@v4
 
@@ -61,5 +57,5 @@ jobs:
         with:
           name: ${{ matrix.artifact }}
           path: |
-            vpu_visualizer_v2/dist/VPU-Visualizer*
+            dist/VPU-Visualizer*
           if-no-files-found: error
