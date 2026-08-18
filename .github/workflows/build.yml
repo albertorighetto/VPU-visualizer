@@ -22,7 +22,7 @@ jobs:
             artifact: VPU-Visualizer-windows
           - os: macos-latest
             artifact: VPU-Visualizer-macos-arm64
-          - os: macos-13
+          - os: macos-15-intel
             artifact: VPU-Visualizer-macos-x86_64
 
     runs-on: ${{ matrix.os }}
