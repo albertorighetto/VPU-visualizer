@@ -5,19 +5,21 @@ Features:
 - Timestamps (HH:MM:SS.mmm) added on receipt
 - Include filter (only rows containing text) and exclude filter
 - Case sensitive / insensitive toggle
-- Tag filter (SEND / RECV / INFO / ERROR / ...)
+- One checkbox per tag seen so far (SEND / RECV / INFO / ERROR / ...),
+  independently toggleable - unchecking one just hides that tag
 - Pause autoscroll, clear
 - Entries are batched via a flush timer so protocol bursts stay smooth
 """
 
+import json
 import re
 from datetime import datetime
 
 from PyQt6.QtCore import Qt, QAbstractTableModel, QModelIndex, QSortFilterProxyModel, QTimer
 from PyQt6.QtGui import QColor, QFont
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, QCheckBox, QComboBox,
-    QPushButton, QTableView, QHeaderView, QAbstractItemView, QLabel
+    QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, QCheckBox,
+    QPushButton, QTableView, QHeaderView, QAbstractItemView, QLabel, QMenu
 )
 
 from theme import PALETTE
@@ -28,7 +30,7 @@ TAG_PATTERN = re.compile(r"^\[(\w+)\]\s*(.*)", re.DOTALL)
 TAG_COLORS = {
     "ERROR": PALETTE["red"],
     "SEND": "#5aa9e6",
-    "RECV": "#3fd08b",
+    "RECV": PALETTE["green"],
     "INFO": PALETTE["accent"],
     "PARSED": PALETTE["text_dim"],
     "CONNECTION": PALETTE["amber"],
@@ -102,27 +104,27 @@ class LogTableModel(QAbstractTableModel):
 
 
 class LogFilterProxy(QSortFilterProxyModel):
-    """Include/exclude text filtering with case toggle and tag filter."""
+    """Include/exclude text filtering with case toggle and per-tag checkboxes."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.include_text = ""
         self.exclude_text = ""
         self.case_sensitive = False
-        self.tag = None  # None = all tags
+        self.hidden_tags = set()  # tags unchecked in the toolbar
 
     def set_filters(self, include_text: str, exclude_text: str,
-                    case_sensitive: bool, tag):
+                    case_sensitive: bool, hidden_tags: set):
         self.include_text = include_text
         self.exclude_text = exclude_text
         self.case_sensitive = case_sensitive
-        self.tag = tag
+        self.hidden_tags = hidden_tags
         self.invalidateFilter()
 
     def filterAcceptsRow(self, source_row, source_parent):
         timestamp, tag, message = self.sourceModel().entries[source_row]
 
-        if self.tag and tag != self.tag:
+        if tag in self.hidden_tags:
             return False
 
         haystack = f"{tag} {message}"
@@ -146,7 +148,7 @@ class LogPanel(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._pending = []
-        self._known_tags = set()
+        self.tag_checks = {}  # tag -> QCheckBox, grown as new tags show up
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 8, 0, 0)
@@ -166,10 +168,14 @@ class LogPanel(QWidget):
         self.exclude_input.setClearButtonEnabled(True)
         toolbar.addWidget(self.exclude_input, 1)
 
-        self.tag_combo = QComboBox()
-        self.tag_combo.addItem("All tags", None)
-        self.tag_combo.setMinimumWidth(110)
-        toolbar.addWidget(self.tag_combo)
+        tags_label = QLabel("Tags:")
+        tags_label.setStyleSheet(f"color: {PALETTE['muted']}; font-size: 11px;")
+        toolbar.addWidget(tags_label)
+
+        # One checkbox per tag, added on demand as new tags show up in _flush.
+        self.tags_layout = QHBoxLayout()
+        self.tags_layout.setSpacing(6)
+        toolbar.addLayout(self.tags_layout)
 
         self.case_check = QCheckBox("Aa")
         self.case_check.setToolTip("Case sensitive")
@@ -204,6 +210,7 @@ class LogPanel(QWidget):
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.table.setWordWrap(False)
+        self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
 
         header = self.table.horizontalHeader()
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
@@ -220,7 +227,7 @@ class LogPanel(QWidget):
         self.search_input.textChanged.connect(self._apply_filters)
         self.exclude_input.textChanged.connect(self._apply_filters)
         self.case_check.toggled.connect(self._apply_filters)
-        self.tag_combo.currentIndexChanged.connect(self._apply_filters)
+        self.table.customContextMenuRequested.connect(self._show_context_menu)
 
         # Flush pending entries on a timer so bursts don't freeze the UI
         self._flush_timer = QTimer(self)
@@ -244,22 +251,32 @@ class LogPanel(QWidget):
         batch, self._pending = self._pending, []
         self.log_model.append_entries(batch)
 
-        # Grow the tag filter dropdown as new tags show up
+        # Grow the tag checkboxes as new tags show up
         for _, tag, _ in batch:
-            if tag and tag not in self._known_tags:
-                self._known_tags.add(tag)
-                self.tag_combo.addItem(tag, tag)
+            if tag and tag not in self.tag_checks:
+                self._add_tag_checkbox(tag)
 
         self._update_count()
         if self.autoscroll_check.isChecked():
             self.table.scrollToBottom()
 
+    def _add_tag_checkbox(self, tag: str):
+        """Add a checked-by-default toggle for a newly-seen tag."""
+        check = QCheckBox(tag)
+        check.setChecked(True)
+        check.setToolTip(f"Show {tag} messages")
+        check.setStyleSheet(f"color: {TAG_COLORS.get(tag, PALETTE['text_dim'])};")
+        check.toggled.connect(self._apply_filters)
+        self.tag_checks[tag] = check
+        self.tags_layout.addWidget(check)
+
     def _apply_filters(self):
+        hidden_tags = {tag for tag, check in self.tag_checks.items() if not check.isChecked()}
         self.proxy.set_filters(
             self.search_input.text(),
             self.exclude_input.text(),
             self.case_check.isChecked(),
-            self.tag_combo.currentData(),
+            hidden_tags,
         )
         self._update_count()
 
@@ -272,3 +289,54 @@ class LogPanel(QWidget):
         self.log_model.clear()
         self._pending.clear()
         self._update_count()
+
+    def _show_context_menu(self, pos):
+        index = self.table.indexAt(pos)
+        if not index.isValid():
+            return
+        source_row = self.proxy.mapToSource(index).row()
+        _, _, message = self.log_model.entries[source_row]
+        path, value = self._extract_path_value(message)
+
+        menu = QMenu(self)
+        copy_path_action = menu.addAction("Copy path")
+        copy_path_action.setEnabled(path is not None)
+        copy_value_action = menu.addAction("Copy value")
+        copy_value_action.setEnabled(value is not None)
+        menu.addSeparator()
+        filter_path_action = menu.addAction("Filter by path")
+        filter_path_action.setEnabled(path is not None)
+        filter_value_action = menu.addAction("Filter by value")
+        filter_value_action.setEnabled(value is not None)
+
+        action = menu.exec(self.table.viewport().mapToGlobal(pos))
+        if action is copy_path_action:
+            QApplication.clipboard().setText(path)
+        elif action is copy_value_action:
+            QApplication.clipboard().setText(value)
+        elif action is filter_path_action:
+            self.search_input.setText(path)
+        elif action is filter_value_action:
+            self.search_input.setText(value)
+
+    @staticmethod
+    def _extract_path_value(message: str):
+        """Best-effort extraction of the AWJ "path"/"value" fields from a
+        SEND/RECV log line's JSON payload (see AWJClient.send_get/send_replace
+        and the raw device messages), for the row's context menu."""
+        try:
+            payload = json.loads(message)
+        except (json.JSONDecodeError, TypeError):
+            return None, None
+        if not isinstance(payload, dict) or "path" not in payload:
+            return None, None
+
+        path = payload["path"]
+        if not isinstance(path, str):
+            path = json.dumps(path)
+
+        value = payload.get("value")
+        if value is not None and not isinstance(value, str):
+            value = json.dumps(value)
+
+        return path, value

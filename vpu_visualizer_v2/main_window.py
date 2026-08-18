@@ -14,14 +14,18 @@ from PyQt6.QtWidgets import (
     QFrame, QScrollArea, QStatusBar, QTabWidget, QButtonGroup
 )
 
-from awj_client import AWJClient, RESOURCE_NEW, RESOURCE_CURRENT
+from awj_client import AWJClient, RESOURCE_NEW, RESOURCE_CURRENT, MAX_PROC_SLOTS
 from vpu_model import VPUModel
-from vpu_widget import VPUWidget
+from vpu_widget import VPUWidget, HOVER_GRACE_MS
 from screens_panel import ScreensPanel
 from log_panel import LogPanel
 from connection_dialog import ConnectionDialog
 from flow_layout import FlowLayout
 from theme import PALETTE
+
+# How long to wait for a hardware-availability response before retrying the
+# check for that VPU slot.
+HW_CHECK_TIMEOUT_MS = 3000
 
 
 class MainWindow(QMainWindow):
@@ -50,6 +54,13 @@ class MainWindow(QMainWindow):
         self.vpu_widgets = {}
         self._vpu_seen_version = -1
 
+        # Hardware-availability gating for VPU data fetches: (device_id, vpu_id) ->
+        # retry timer while a check is outstanding, and the set of VPUs we've
+        # already triggered a full data fetch for (avoids re-fetching on
+        # duplicate availability responses).
+        self._hw_check_timers = {}
+        self._vpu_fetch_requested = set()
+
         self.setup_ui()
 
         self.status_bar = QStatusBar()
@@ -62,6 +73,14 @@ class MainWindow(QMainWindow):
         self.update_timer = QTimer(self)
         self.update_timer.timeout.connect(self.refresh_display)
         self.update_timer.start(400)
+
+        # Debounced clear for the pipe-cell dim/border hover state, mirroring
+        # the pipe cell tooltip's own grace period (see vpu_widget.HOVER_GRACE_MS)
+        # so crossing the thin gap between adjacent cells doesn't flash the
+        # dim/highlight off and back on.
+        self._hover_clear_timer = QTimer(self)
+        self._hover_clear_timer.setSingleShot(True)
+        self._hover_clear_timer.timeout.connect(self._clear_hover_state)
 
     # ------------------------------------------------------------------ UI
 
@@ -249,6 +268,11 @@ class MainWindow(QMainWindow):
         self.vpu_widgets.clear()
         self._vpu_seen_version = -1
 
+        for timer in self._hw_check_timers.values():
+            timer.stop()
+        self._hw_check_timers.clear()
+        self._vpu_fetch_requested.clear()
+
     # ------------------------------------------------------- Status pill
 
     def _update_status_pill(self, state: str = None):
@@ -257,7 +281,7 @@ class MainWindow(QMainWindow):
             color = PALETTE['amber']
             text = f"Connecting to {self.client.ip}:{self.client.port}…"
         elif self.client.is_connected:
-            color = "#3fd08b"
+            color = PALETTE['green']
             config = "pending" if self.model.resource == RESOURCE_NEW else "current"
             live = " · live" if self.client.is_live else ""
             text = f"{self.client.ip}:{self.client.port} · {config} config{live}"
@@ -283,8 +307,9 @@ class MainWindow(QMainWindow):
 
     @pyqtSlot()
     def on_connected(self):
-        self.connect_button.setText("Disconnect")
-        self.connect_button.setObjectName("danger")
+        self.connect_button.setText("Connected")
+        self.connect_button.setObjectName("success")
+        self.connect_button.setToolTip("Click to disconnect")
         self._repolish(self.connect_button)
         self.connect_button.setEnabled(True)
         self.refresh_button.setEnabled(True)
@@ -297,6 +322,7 @@ class MainWindow(QMainWindow):
     def on_disconnected(self):
         self.connect_button.setText("Connect")
         self.connect_button.setObjectName("accent")
+        self.connect_button.setToolTip("")
         self._repolish(self.connect_button)
         self.connect_button.setEnabled(True)
         self.refresh_button.setEnabled(False)
@@ -319,9 +345,13 @@ class MainWindow(QMainWindow):
         result = self.model.process_message(data)
         self.log_panel.append(f"[PARSED] {result}")
 
-        # After receiving device type, immediately fetch all VPU data for that device
+        # After receiving device type, check hardware availability for each
+        # of its VPU slots (data is only fetched for slots that report available)
         if "[DEVICE]" in result and "vpus=" in result:
             self.request_vpu_data_for_device(data)
+
+        if "[HARDWARE]" in result:
+            self.on_hardware_availability(data)
 
         # After receiving screen layer count, request layer details
         if "[SCREEN]" in result and "layers=" in result:
@@ -332,17 +362,91 @@ class MainWindow(QMainWindow):
             self.request_screen_details(data)
 
     def request_vpu_data_for_device(self, data: dict):
-        """Request VPU data after device type is received."""
+        """Once a device's type is known, start a hardware availability check
+        chain for its VPU slots - there's no static per-type VPU count table,
+        so PROC_1 is always checked first and the real count is whatever
+        polling finds. PROC cards populate a chassis contiguously from slot 1
+        up, so slots are checked one at a time in order (on_hardware_availability
+        requests the next slot once the current one comes back) instead of
+        bashing every slot at once, and the chain stops at the first slot
+        that isn't available."""
         path = data.get("path", "")
         match = self.model.REGEX_DEVICE_TYPE.match(path)
         if match:
             device_id = int(match.group(1))
             device = self.model.get_device(device_id)
-            if device and device.vpu_count > 0:
+            if device and device.device_type:
                 self.log_panel.append(
-                    f"[INFO] Fetching VPU data for Device {device_id} "
-                    f"({device.device_type}) - {device.vpu_count} VPUs")
-                self.client.fetch_all_vpu_data(device_id, device.vpu_count)
+                    f"[INFO] Device {device_id} ({device.device_type}) - polling "
+                    f"hardware availability")
+                self._maybe_request_hardware_check(device_id, 1)
+
+    def on_hardware_availability(self, data: dict):
+        """Handle a hardware/$card isAvailable response: fetch that VPU's data
+        if available and move on to check the next slot in order; otherwise
+        stop the chain for this device, since a missing slot means no higher
+        slot can be populated either. Cancels its retry timer either way."""
+        path = data.get("path", "")
+        match = self.model.REGEX_VPU_HARDWARE_AVAILABLE.match(path)
+        if not match:
+            return
+        device_id = int(match.group(1))
+        vpu_id = int(match.group(2))
+
+        timer = self._hw_check_timers.pop((device_id, vpu_id), None)
+        if timer:
+            timer.stop()
+
+        device = self.model.get_device(device_id)
+        if not device:
+            return
+
+        if device.hardware_available.get(vpu_id):
+            if (device_id, vpu_id) not in self._vpu_fetch_requested:
+                self._vpu_fetch_requested.add((device_id, vpu_id))
+                self.client.fetch_vpu_data(device_id, vpu_id)
+            if vpu_id < MAX_PROC_SLOTS:
+                self._maybe_request_hardware_check(device_id, vpu_id + 1)
+        else:
+            self.log_panel.append(
+                f"[INFO] Device {device_id}, VPU {vpu_id}: hardware not available, "
+                f"stopping availability check for remaining slot(s)")
+
+    def _maybe_request_hardware_check(self, device_id: int, vpu_id: int):
+        """Send a hardware-availability check for one VPU slot, unless one is
+        already outstanding or the answer is already known."""
+        key = (device_id, vpu_id)
+        if key in self._hw_check_timers:
+            return
+        device = self.model.get_device(device_id)
+        if device and device.hardware_available.get(vpu_id) is not None:
+            return
+        self._request_hardware_check(device_id, vpu_id)
+
+    def _request_hardware_check(self, device_id: int, vpu_id: int):
+        self.client.check_hardware_card_available(device_id, vpu_id)
+
+        timer = QTimer(self)
+        timer.setSingleShot(True)
+        timer.timeout.connect(
+            lambda d=device_id, v=vpu_id: self._on_hardware_check_timeout(d, v))
+        self._hw_check_timers[(device_id, vpu_id)] = timer
+        timer.start(HW_CHECK_TIMEOUT_MS)
+
+    def _on_hardware_check_timeout(self, device_id: int, vpu_id: int):
+        """No isAvailable response within HW_CHECK_TIMEOUT_MS - ask again."""
+        self._hw_check_timers.pop((device_id, vpu_id), None)
+
+        if not self.client.is_connected:
+            return
+        device = self.model.get_device(device_id)
+        if device and device.hardware_available.get(vpu_id) is not None:
+            return  # answered just as the timer fired
+
+        self.log_panel.append(
+            f"[INFO] Device {device_id}, VPU {vpu_id}: no availability response "
+            f"after {HW_CHECK_TIMEOUT_MS // 1000}s, retrying")
+        self._request_hardware_check(device_id, vpu_id)
 
     def request_screen_layer_details(self, data: dict):
         """Request layer details after screen layer count is received."""
@@ -355,13 +459,18 @@ class MainWindow(QMainWindow):
                 self.client.fetch_screen_details(screen_id, len(screen.layers))
 
     def request_screen_details(self, data: dict):
-        """Request additional screen details after screen is found active."""
+        """Request additional screen details after screen is found active.
+        isOptimized/isStereo3d/regionValidity are screen-level properties,
+        independent of whether the screen has any layers, so they're
+        requested here rather than gated behind the layer-count fetch below."""
         path = data.get("path", "")
         match = self.model.REGEX_SCREEN_MODE.match(path)
         if match:
             screen_id = int(match.group(1))
             self.client.get_screen_layer_count(screen_id)
             self.client.get_screen_optimized(screen_id)
+            self.client.get_screen_stereo3d(screen_id)
+            self.client.get_screen_region_validity(screen_id)
 
     @pyqtSlot(str)
     def on_debug_message(self, message: str):
@@ -384,8 +493,16 @@ class MainWindow(QMainWindow):
             for vpu in device.vpus:
                 key = (device.id, vpu.vpu_id)
 
+                # Hardware confirmed this VPU slot isn't populated - don't show a card for it.
+                if device.hardware_available.get(vpu.vpu_id) is False:
+                    stale = self.vpu_widgets.pop(key, None)
+                    if stale:
+                        stale.setParent(None)
+                        stale.deleteLater()
+                    continue
+
                 if key not in self.vpu_widgets:
-                    widget = VPUWidget(device, vpu)
+                    widget = VPUWidget(device, vpu, self.model)
                     self.vpu_widgets[key] = widget
                     self.vpu_flow.addWidget(widget)
 
@@ -398,18 +515,31 @@ class MainWindow(QMainWindow):
 
                 self.vpu_widgets[key].update_display()
 
+        # Enforce device-then-VPU order in the card grid regardless of the
+        # order API messages arrived in (e.g. a device whose type arrives
+        # late would otherwise get its cards appended after later devices').
+        ordered_widgets = [self.vpu_widgets[key] for key in self.model.ordered_vpu_keys()
+                            if key in self.vpu_widgets]
+        self.vpu_flow.reorder(ordered_widgets)
+
         self.vpu_empty_label.setVisible(not self.vpu_widgets)
 
     def on_scaler_hovered(self, scaler):
-        """Highlight matching scalers across all VPU cards."""
+        """Dim every non-matching layer and border the exact screen+layer+slice
+        match, across all VPU cards. Cancels any pending clear from a just-left
+        cell, so crossing the gap into this one reads as continuous."""
+        self._hover_clear_timer.stop()
         for vpu_widget in self.vpu_widgets.values():
-            vpu_widget.highlight_matching(scaler, True)
+            vpu_widget.set_hover_state(scaler)
 
     def on_scaler_left(self):
-        """Clear scaler highlights."""
+        """Clear dim/border state after a short grace period (see HOVER_GRACE_MS),
+        so briefly crossing the gap between two cells doesn't flicker it off."""
+        self._hover_clear_timer.start(HOVER_GRACE_MS)
+
+    def _clear_hover_state(self):
         for vpu_widget in self.vpu_widgets.values():
-            for pipe_widget in vpu_widget.pipe_widgets:
-                pipe_widget.set_highlighted(False)
+            vpu_widget.set_hover_state(None)
 
     def on_device_hovered(self, device_id: int):
         """Subtly highlight all VPU cards belonging to the hovered device."""

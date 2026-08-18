@@ -153,3 +153,6 @@ VPU-visualizer-1.0.4-macos
 VPU-visualizer-1.0.4-win.exe
 VPU-visualizer-macos
 server.js
+PNG/
+SVG/
+fw6_3D.json

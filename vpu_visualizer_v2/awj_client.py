@@ -19,6 +19,14 @@ EOT_CHAR = '\u0004'  # End of transmission character
 RESOURCE_CURRENT = "current"
 RESOURCE_NEW = "new"
 
+# hardware/$card/@items always exposes exactly PROC_1..PROC_4 in the device's
+# own object schema, for every device slot regardless of chassis size or
+# type - this is a protocol-wide ceiling on addressable PROC slots, not a
+# per-device-type VPU count guess. It only bounds the availability-polling
+# chain in MainWindow; which of those slots actually exist is always
+# determined by polling, never assumed.
+MAX_PROC_SLOTS = 4
+
 
 class AWJClient(QObject):
     """TCP Client for AWJ protocol communication."""
@@ -189,6 +197,14 @@ class AWJClient(QObject):
         """Get screen optimization status."""
         self.send_get(f"{self._res_base()}/$screen/@items/S{screen_id}/status/@props/isOptimized")
 
+    def get_screen_stereo3d(self, screen_id: int):
+        """Get screen stereoscopic 3D status."""
+        self.send_get(f"{self._res_base()}/$screen/@items/S{screen_id}/status/@props/isStereo3d")
+
+    def get_screen_region_validity(self, screen_id: int):
+        """Get the number of valid/active regions for a screen."""
+        self.send_get(f"{self._res_base()}/$screen/@items/S{screen_id}/status/@props/regionValidity")
+
     def get_layer_capability(self, screen_id: int, layer_id: int):
         """Get layer capability."""
         self.send_get(f"{self._res_base()}/$screen/@items/S{screen_id}/$layer/@items/{layer_id}/status/@props/capability")
@@ -237,31 +253,33 @@ class AWJClient(QObject):
         # Live AWJ protocol node name is mixerAllocation, not the web UI's scalerAllocation
         self.send_get(f"{self._mixer_base(device_id, vpu_id, mixer_id)}/mixerAllocation/@props/usedOnOutPipe{pipe_id}")
 
-    def get_hardware_card_available(self, device_id: int, card_name: str):
-        """Check if a hardware card (PROC_1, PROC_2, etc.) is available."""
-        path = f"DeviceObject/system/$device/@items/{device_id}/hardware/$card/@items/{card_name}/@props/isAvailable"
+    def check_hardware_card_available(self, device_id: int, vpu_id: int):
+        """Ask whether a VPU's hardware card (PROC_1, PROC_2, ...) is present.
+        Gates fetch_vpu_data - MainWindow only fetches the (expensive) full
+        VPU data set once this comes back true, instead of blindly requesting
+        16 mixers' worth of properties for VPU slots that may not exist."""
+        path = f"DeviceObject/system/$device/@items/{device_id}/hardware/$card/@items/PROC_{vpu_id}/@props/isAvailable"
         self.send_get(path)
 
-    def fetch_all_vpu_data(self, device_id: int, vpu_count: int):
-        """Actively fetch all VPU data for a device."""
-        self.debug_message.emit(f"[INFO] Fetching VPU data for Device {device_id} ({vpu_count} VPUs)")
+    def fetch_vpu_data(self, device_id: int, vpu_id: int):
+        """Actively fetch all mixer data for a single VPU."""
+        self.debug_message.emit(f"[INFO] Fetching VPU data for Device {device_id}, VPU {vpu_id}")
 
-        for vpu_id in range(1, vpu_count + 1):
-            for mixer_id in range(1, 17):
-                # Get all mixer properties (16 mixers per VPU on multi-device firmware)
-                self.get_vpu_layer_enabled(device_id, vpu_id, mixer_id)
-                self.get_vpu_layer_available(device_id, vpu_id, mixer_id)
-                self.get_vpu_layer_capability(device_id, vpu_id, mixer_id)
-                self.get_vpu_layer_screen(device_id, vpu_id, mixer_id)
-                self.get_vpu_layer_layer(device_id, vpu_id, mixer_id)
-                self.get_vpu_mixer_cutnfill_capa(device_id, vpu_id, mixer_id)
-                self.get_vpu_mixer_seamless_capa(device_id, vpu_id, mixer_id)
-                self.get_vpu_mixer_channel(device_id, vpu_id, mixer_id)
-                self.get_vpu_mixer_slice(device_id, vpu_id, mixer_id)
+        for mixer_id in range(1, 17):
+            # Get all mixer properties (16 mixers per VPU on multi-device firmware)
+            self.get_vpu_layer_enabled(device_id, vpu_id, mixer_id)
+            self.get_vpu_layer_available(device_id, vpu_id, mixer_id)
+            self.get_vpu_layer_capability(device_id, vpu_id, mixer_id)
+            self.get_vpu_layer_screen(device_id, vpu_id, mixer_id)
+            self.get_vpu_layer_layer(device_id, vpu_id, mixer_id)
+            self.get_vpu_mixer_cutnfill_capa(device_id, vpu_id, mixer_id)
+            self.get_vpu_mixer_seamless_capa(device_id, vpu_id, mixer_id)
+            self.get_vpu_mixer_channel(device_id, vpu_id, mixer_id)
+            self.get_vpu_mixer_slice(device_id, vpu_id, mixer_id)
 
-                # Get pipe usage for each mixer (8 pipes per mixer)
-                for pipe_id in range(1, 9):
-                    self.get_scaler_pipe_usage(device_id, vpu_id, mixer_id, pipe_id)
+            # Get pipe usage for each mixer (8 pipes per mixer)
+            for pipe_id in range(1, 9):
+                self.get_scaler_pipe_usage(device_id, vpu_id, mixer_id, pipe_id)
 
     def fetch_screen_details(self, screen_id: int, layer_count: int):
         """Fetch detailed screen layer information."""
@@ -284,11 +302,8 @@ class AWJClient(QObject):
         # Step 2: Subscribe to updates for real-time changes
         self.subscribe_to_updates()
 
-        # Step 3: Get device types (this triggers VPU data fetch in on_data_received)
+        # Step 3: Get device types. Once a type (and thus VPU count) is known,
+        # MainWindow checks hardware availability per VPU slot and only then
+        # fetches that VPU's mixer data - see MainWindow.request_vpu_data_for_device.
         for device_id in range(1, 5):
             self.get_device_type(device_id)
-
-        # Step 4: Check hardware card availability
-        for device_id in range(1, 5):
-            for proc_id in range(1, 5):
-                self.get_hardware_card_available(device_id, f"PROC_{proc_id}")

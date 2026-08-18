@@ -4,6 +4,12 @@ Theme, palette and shared style helpers for VPU Visualizer 2.0.
 Flat, minimal dark theme. Panels are borderless "cards" distinguished by
 surface color instead of frames; the only strong borders left in the app are
 the pipe cells of the VPU matrix, which are a core feature.
+
+Palette matches AnalogWay's own "Web RCS" control app (its slate-grey
+surface scale and blue/orange/green accent colors), so this visualizer sits
+visually next to it. Layer colors (theme.py doesn't own those - see
+vpu_widget.LAYER_COLORS) are the official AW per-layer swatches and are left
+untouched.
 """
 
 import os
@@ -19,21 +25,21 @@ def resource_path(relative: str) -> str:
 
 
 PALETTE = {
-    "bg":           "#101116",
-    "surface":      "#171820",
-    "surface_alt":  "#1e2029",
-    "surface_deep": "#0b0c10",
-    "border":       "#272a37",
-    "border_soft":  "#20222d",
-    "accent":       "#7c6cff",
-    "accent_hover": "#8f81ff",
-    "accent_soft":  "#4b579d",
-    "text":         "#e8e9ee",
-    "text_dim":     "#9a9eb3",
-    "muted":        "#686c80",
-    "green":        "#3fd08b",
-    "amber":        "#e8b33e",
-    "red":          "#e5484d",
+    "bg":           "#08141b",
+    "surface":      "#1b272f",
+    "surface_alt":  "#283239",
+    "surface_deep": "#04090c",
+    "border":       "#49535b",
+    "border_soft":  "#283239",
+    "accent":       "#2185d0",
+    "accent_hover": "#1678c2",
+    "accent_soft":  "#103651",
+    "text":         "#ffffff",
+    "text_dim":     "#b0b3b5",
+    "muted":        "#838b91",
+    "green":        "#00ff7f",
+    "amber":        "#f2711c",
+    "red":          "#f64747",
 }
 
 # One accent per device slot (1..4) so chained chassis are easy to tell apart.
@@ -71,7 +77,7 @@ def build_stylesheet() -> str:
         QWidget {{
             color: {p['text']};
             font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
-            font-size: 13px;
+            font-size: 10pt;
         }}
         QLabel {{
             background: transparent;
@@ -134,7 +140,15 @@ def build_stylesheet() -> str:
             color: {p['red']};
         }}
         QPushButton#danger:hover {{
-            background-color: rgba(229, 72, 77, 0.15);
+            background-color: rgba(246, 71, 71, 0.15);
+        }}
+        QPushButton#success {{
+            background-color: {p['green']};
+            color: {p['bg']};
+            font-weight: 600;
+        }}
+        QPushButton#success:hover {{
+            background-color: #00e672;
         }}
         QPushButton#ghost {{
             background-color: transparent;
@@ -220,7 +234,7 @@ def build_stylesheet() -> str:
             border: none;
         }}
         QTableView::item:selected {{
-            background-color: rgba(124, 108, 255, 0.25);
+            background-color: rgba(33, 133, 208, 0.25);
             color: {p['text']};
         }}
         QHeaderView::section {{

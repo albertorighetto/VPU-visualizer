@@ -5,7 +5,7 @@ Data structures for devices, VPUs, screens, and scalers.
 
 import re
 from dataclasses import dataclass, field
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Tuple
 from enum import Enum
 
 
@@ -22,30 +22,11 @@ class LayerCapability(Enum):
     K8 = "8K"
 
 
-# Device types and their VPU counts.
-# Verified against the live firmware's VAR_ENUMS.DEV (fetched from the
-# device's own web UI bundle) - this is the full and current set; there are
-# no legacy/short-name variants on this firmware.
-# RS1/RSALPHA=1VPU, RS2/RS3=2VPUs, RS4/RS5=3VPUs, RS6=4VPUs
-# C=2VPUs, CPLUS=3VPUs, CMAX=4VPUs, CMINI=1VPU
-DEVICE_VPU_COUNTS = {
-    "NLC_DBG": 1,        # Debug device
-    "NLC_RS1": 1,        # Aquilon RS1 - 4U chassis
-    "NLC_RS2": 2,        # Aquilon RS2 - 4U chassis
-    "NLC_RS3": 2,        # Aquilon RS3 - 5U chassis
-    "NLC_RS4": 3,        # Aquilon RS4 - 5U chassis
-    "NLC_RS5": 3,        # Aquilon RS5 - 6U chassis
-    "NLC_RS6": 4,        # Aquilon RS6 - 6U chassis
-    "NLC_RSALPHA": 1,    # Aquilon RS Alpha - 4U chassis
-    "NLC_C": 2,          # Aquilon C - 4U chassis
-    "NLC_CPLUS": 3,      # Aquilon C+ - 5U chassis
-    "NLC_CMAX": 4,       # Aquilon Cmax - 6U chassis
-    "NLC_CMINI": 1,      # Aquilon Cmini - 3U chassis
-    # VDW variants (VideoWall)
-    "VDW_W": 2,          # VideoWall W - 4U chassis
-    "VDW_WPLUS": 3,      # VideoWall W+ - 5U chassis
-    "VDW_WMAX": 4,       # VideoWall Wmax - 6U chassis
-}
+# Note: there's no static device-type -> VPU-count table here on purpose.
+# Chassis size varies per unit and isn't reliably inferable from the type
+# string alone, so VPU slots are only ever taken from live polling of
+# hardware/$card/@items/PROC_n isAvailable (see AWJClient.MAX_PROC_SLOTS and
+# MainWindow's hardware-availability chain) - never assumed.
 
 # Human-readable labels for device types, from the firmware's VAR_LABELS.DEV.
 DEVICE_LABELS = {
@@ -134,32 +115,37 @@ class Device:
     device_type: Optional[str] = None
     vpu_count: int = 0
     vpus: List[VPU] = field(default_factory=list)
-    
+    # PROC (VPU hardware card) slot -> isAvailable, from
+    # hardware/$card/@items/PROC_n. Keyed independently of `vpus` since this
+    # can arrive before or after the device type response.
+    hardware_available: Dict[int, bool] = field(default_factory=dict)
+
     def get_vpu(self, vpu_id: int) -> Optional[VPU]:
-        """Get or create VPU by ID."""
+        """Get a VPU slot, but only if its hardware has already been
+        confirmed present via add_vpu() - never speculatively created."""
         for vpu in self.vpus:
             if vpu.vpu_id == vpu_id:
                 return vpu
-        
-        # Create if VPU count allows
-        if vpu_id <= self.vpu_count:
-            new_vpu = VPU(vpu_id=vpu_id)
-            self.vpus.append(new_vpu)
-            self.vpus.sort(key=lambda v: v.vpu_id)
-            return new_vpu
-        
         return None
-    
+
+    def add_vpu(self, vpu_id: int) -> VPU:
+        """Register a VPU slot once hardware/$card/@items/PROC_n has
+        confirmed it's available. This is the only source of VPU count -
+        there's no static per-device-type table to fall back on."""
+        existing = self.get_vpu(vpu_id)
+        if existing:
+            return existing
+        new_vpu = VPU(vpu_id=vpu_id)
+        self.vpus.append(new_vpu)
+        self.vpus.sort(key=lambda v: v.vpu_id)
+        self.vpu_count = max(self.vpu_count, vpu_id)
+        return new_vpu
+
     def update_from_type(self, device_type: str):
-        """Update device info from type string."""
+        """Update device info from type string. Doesn't touch VPU count/slots -
+        those only ever come from live hardware-availability polling."""
         # Remove 'DEV_' prefix if present
-        clean_type = device_type.replace("DEV_", "")
-        self.device_type = clean_type
-        self.vpu_count = DEVICE_VPU_COUNTS.get(clean_type, 0)
-        
-        # Initialize VPUs
-        for vpu_id in range(1, self.vpu_count + 1):
-            self.get_vpu(vpu_id)
+        self.device_type = device_type.replace("DEV_", "")
 
 
 @dataclass 
@@ -177,8 +163,19 @@ class Screen:
     id: int
     active: bool = False
     optimized: bool = False
+    is_stereo_3d: bool = False
+    region_validity: Optional[List[Any]] = None
     layers: List[Layer] = field(default_factory=list)
-    
+
+    def has_multiple_regions(self) -> bool:
+        """Whether this screen is actually split into more than one region
+        (regionValidity holds the list of currently valid/active region IDs,
+        e.g. ["1", "2", "3"])."""
+        try:
+            return len(self.region_validity) > 1
+        except TypeError:
+            return False
+
     def get_layer(self, layer_id: int) -> Optional[Layer]:
         """Get or create layer by ID."""
         for layer in self.layers:
@@ -202,8 +199,10 @@ class VPUModel:
     are ignored so switching config views never mixes data.
     """
 
-    # Device type is not resource-dependent
+    # Device type and hardware card presence are not resource-dependent
     REGEX_DEVICE_TYPE = re.compile(r"DeviceObject/system/\$device/@items/(\d+)/@props/dev")
+    REGEX_VPU_HARDWARE_AVAILABLE = re.compile(
+        r"DeviceObject/system/\$device/@items/(\d+)/hardware/\$card/@items/PROC_(\d+)/@props/isAvailable")
 
     def __init__(self, resource: str = "new"):
         self.devices: List[Device] = [Device(id=i) for i in range(1, 5)]
@@ -230,6 +229,8 @@ class VPUModel:
         self.REGEX_SCREEN_MODE = re.compile(rf"{screen}/status/@props/mode")
         self.REGEX_SCREEN_LAYER_COUNT = re.compile(rf"{screen}/status/@props/layerCount")
         self.REGEX_SCREEN_OPTIMIZED = re.compile(rf"{screen}/status/@props/isOptimized")
+        self.REGEX_SCREEN_STEREO3D = re.compile(rf"{screen}/status/@props/isStereo3d")
+        self.REGEX_SCREEN_REGION_VALIDITY = re.compile(rf"{screen}/status/@props/regionValidity")
         self.REGEX_LAYER_CAPABILITY = re.compile(rf"{screen}/\$layer/@items/(\d+)/status/@props/capability")
         self.REGEX_LAYER_REGIONS = re.compile(rf"{screen}/\$layer/@items/(\d+)/status/@props/usedInRegions")
         self.REGEX_LAYER_MASK = re.compile(rf"{screen}/\$layer/@items/(\d+)/status/@props/canUseMask")
@@ -290,7 +291,10 @@ class VPUModel:
         # Try each pattern
         result = self._try_parse_device_type(path, value)
         if result: return result
-        
+
+        result = self._try_parse_vpu_hardware_available(path, value)
+        if result: return result
+
         result = self._try_parse_screen_mode(path, value)
         if result: return result
         
@@ -299,7 +303,13 @@ class VPUModel:
         
         result = self._try_parse_screen_optimized(path, value)
         if result: return result
-        
+
+        result = self._try_parse_screen_stereo3d(path, value)
+        if result: return result
+
+        result = self._try_parse_screen_region_validity(path, value)
+        if result: return result
+
         result = self._try_parse_layer_capability(path, value)
         if result: return result
         
@@ -351,7 +361,22 @@ class VPUModel:
                 self._notify_update()
                 return f"[DEVICE] Device {device_id}: type={device.device_type}, vpus={device.vpu_count}"
         return None
-    
+
+    def _try_parse_vpu_hardware_available(self, path: str, value: Any) -> Optional[str]:
+        match = self.REGEX_VPU_HARDWARE_AVAILABLE.match(path)
+        if match:
+            device_id = int(match.group(1))
+            proc_id = int(match.group(2))
+            device = self.get_device(device_id)
+            if device:
+                available = bool(value)
+                device.hardware_available[proc_id] = available
+                if available:
+                    device.add_vpu(proc_id)
+                self._notify_update()
+                return f"[HARDWARE] Device {device_id}, PROC_{proc_id}: available={available}"
+        return None
+
     def _try_parse_screen_mode(self, path: str, value: Any) -> Optional[str]:
         match = self.REGEX_SCREEN_MODE.match(path)
         if match:
@@ -385,7 +410,29 @@ class VPUModel:
                 self._notify_update()
                 return f"[SCREEN] Screen {screen_id}: optimized={screen.optimized}"
         return None
-    
+
+    def _try_parse_screen_stereo3d(self, path: str, value: Any) -> Optional[str]:
+        match = self.REGEX_SCREEN_STEREO3D.match(path)
+        if match:
+            screen_id = int(match.group(1))
+            screen = self.get_screen(screen_id)
+            if screen:
+                screen.is_stereo_3d = bool(value)
+                self._notify_update()
+                return f"[SCREEN] Screen {screen_id}: stereo3d={screen.is_stereo_3d}"
+        return None
+
+    def _try_parse_screen_region_validity(self, path: str, value: Any) -> Optional[str]:
+        match = self.REGEX_SCREEN_REGION_VALIDITY.match(path)
+        if match:
+            screen_id = int(match.group(1))
+            screen = self.get_screen(screen_id)
+            if screen:
+                screen.region_validity = value
+                self._notify_update()
+                return f"[SCREEN] Screen {screen_id}: regionValidity={value}"
+        return None
+
     def _try_parse_layer_capability(self, path: str, value: Any) -> Optional[str]:
         match = self.REGEX_LAYER_CAPABILITY.match(path)
         if match:
@@ -629,6 +676,14 @@ class VPUModel:
     def active_screens(self) -> List[Screen]:
         return [s for s in self.screens if s.active]
 
+    def ordered_vpu_keys(self) -> List[Tuple[int, int]]:
+        """Every (device_id, vpu_id) in the system, in global order (device-major,
+        vpu-minor) - e.g. device 2's VPU 3 might be the 6th entry overall. Used to
+        keep a device/VPU's column position consistent everywhere it's shown."""
+        return [(device.id, vpu.vpu_id)
+                for device in self.active_devices()
+                for vpu in device.vpus]
+
     def get_layer_mappings(self, screen_id: int, layer_id: int):
         """All (device, vpu, scaler) triples where an enabled mixer serves the
         given screen/layer - the join between the screen view and the VPU map."""
@@ -647,16 +702,12 @@ class VPUModel:
         vpus = sum(d.vpu_count for d in devices)
         mixers_used = 0
         mixers_total = 0
-        pipes_used = set()
         for device in devices:
             for vpu in device.vpus:
                 mixers_total += len(vpu.scalers)
                 for scaler in vpu.scalers:
                     if scaler.is_enabled:
                         mixers_used += 1
-                    for value in scaler.pipes.values():
-                        if value and value != "NONE":
-                            pipes_used.add((device.id, str(value)))
         screens = self.active_screens()
         layers = sum(len(s.layers) for s in screens)
         return {
@@ -664,7 +715,6 @@ class VPUModel:
             "vpus": vpus,
             "mixers_used": mixers_used,
             "mixers_total": mixers_total,
-            "pipes_used": len(pipes_used),
             "screens": len(screens),
             "layers": layers,
         }

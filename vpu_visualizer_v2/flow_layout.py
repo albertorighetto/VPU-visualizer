@@ -36,6 +36,19 @@ class FlowLayout(QLayout):
             return self._items.pop(index)
         return None
 
+    def reorder(self, widgets):
+        """Rearrange existing items to match `widgets`' order, without touching
+        widget identity/parentage - just changes their layout position. Widgets
+        not currently in the layout are ignored; layout items whose widget isn't
+        in `widgets` keep their relative order and are appended at the end."""
+        item_by_widget = {item.widget(): item for item in self._items}
+        ordered = [item_by_widget[w] for w in widgets if w in item_by_widget]
+        remaining = [item for item in self._items if item.widget() not in widgets]
+        new_items = ordered + remaining
+        if new_items != self._items:
+            self._items = new_items
+            self.invalidate()
+
     def expandingDirections(self):
         return Qt.Orientation(0)
 
