@@ -189,6 +189,10 @@ class AWJClient(QObject):
         """Get screen mode (active/disabled)."""
         self.send_get(f"{self._res_base()}/$screen/@items/S{screen_id}/status/@props/mode")
 
+    def get_screen_label(self, screen_id: int):
+        """Get screen name/label. Lives outside the preconfig resource tree."""
+        self.send_get(f"DeviceObject/$screen/@items/S{screen_id}/control/@props/label")
+
     def get_screen_layer_count(self, screen_id: int):
         """Get number of layers for a screen."""
         self.send_get(f"{self._res_base()}/$screen/@items/S{screen_id}/status/@props/layerCount")

@@ -166,6 +166,7 @@ class Screen:
     is_stereo_3d: bool = False
     region_validity: Optional[List[Any]] = None
     layers: List[Layer] = field(default_factory=list)
+    label: Optional[str] = None
 
     def has_multiple_regions(self) -> bool:
         """Whether this screen is actually split into more than one region
@@ -203,6 +204,8 @@ class VPUModel:
     REGEX_DEVICE_TYPE = re.compile(r"DeviceObject/system/\$device/@items/(\d+)/@props/dev")
     REGEX_VPU_HARDWARE_AVAILABLE = re.compile(
         r"DeviceObject/system/\$device/@items/(\d+)/hardware/\$card/@items/PROC_(\d+)/@props/isAvailable")
+    # Screen name/label lives outside the preconfig resource tree too
+    REGEX_SCREEN_LABEL = re.compile(r"DeviceObject/\$screen/@items/S(\d+)/control/@props/label")
 
     def __init__(self, resource: str = "new"):
         self.devices: List[Device] = [Device(id=i) for i in range(1, 5)]
@@ -295,6 +298,9 @@ class VPUModel:
         result = self._try_parse_vpu_hardware_available(path, value)
         if result: return result
 
+        result = self._try_parse_screen_label(path, value)
+        if result: return result
+
         result = self._try_parse_screen_mode(path, value)
         if result: return result
         
@@ -375,6 +381,17 @@ class VPUModel:
                     device.add_vpu(proc_id)
                 self._notify_update()
                 return f"[HARDWARE] Device {device_id}, PROC_{proc_id}: available={available}"
+        return None
+
+    def _try_parse_screen_label(self, path: str, value: Any) -> Optional[str]:
+        match = self.REGEX_SCREEN_LABEL.match(path)
+        if match:
+            screen_id = int(match.group(1))
+            screen = self.get_screen(screen_id)
+            if screen:
+                screen.label = value or None
+                self._notify_update()
+                return f"[SCREEN] Screen {screen_id}: label={screen.label}"
         return None
 
     def _try_parse_screen_mode(self, path: str, value: Any) -> Optional[str]:

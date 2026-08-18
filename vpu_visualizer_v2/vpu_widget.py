@@ -386,8 +386,13 @@ class PipeCellWidget(QFrame):
         s = self.scaler
         lines = []
 
+        screen = self.model.get_screen(s.screen) if self.model and s.screen else None
+
         if s.screen:
-            lines.append(f"Screen {s.screen}")
+            if screen and screen.label:
+                lines.append(f"Screen {s.screen} - {screen.label}")
+            else:
+                lines.append(f"Screen {s.screen}")
 
         if s.layer:
             lines.append(f"Layer {s.layer}")
@@ -398,8 +403,6 @@ class PipeCellWidget(QFrame):
         lines.append(capacity_line)
 
         lines.append("Mixer" if is_truthy_capa(s.seamless_capa) else "Split")
-
-        screen = self.model.get_screen(s.screen) if self.model and s.screen else None
 
         if s.layer and screen:
             layer_obj = screen.get_layer(s.layer)

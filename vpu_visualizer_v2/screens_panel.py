@@ -365,7 +365,10 @@ class ScreenCard(QFrame):
 
         header.addWidget(_screen_icon_widget())
 
-        title = QLabel(f"Screen {screen.id}")
+        title_text = f"Screen {screen.id}"
+        if screen.label:
+            title_text += f' - "{screen.label}"'
+        title = QLabel(title_text)
         title.setStyleSheet(f"font-weight: 600; font-size: 14px; background: transparent;")
         header.addWidget(title)
 

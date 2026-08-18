@@ -2,8 +2,8 @@
 VPU Visualizer 2.0 Main Window
 
 Layout:
-- Header bar: app title, Pending/Current config switch, connection status pill,
-  quick connect/disconnect, refresh, connection settings (gear).
+- Header bar: app title, Pending/Current config switch, IP/port fields,
+  connection status pill, quick connect/disconnect, refresh.
 - Tabs: VPU Map (responsive card grid), Screens & Layers (merged view with
   summary strip), Log (searchable/filterable).
 """
@@ -11,7 +11,8 @@ Layout:
 from PyQt6.QtCore import Qt, QTimer, QSettings, pyqtSlot
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QFrame, QScrollArea, QStatusBar, QTabWidget, QButtonGroup
+    QFrame, QScrollArea, QStatusBar, QTabWidget, QButtonGroup, QLineEdit,
+    QSpinBox
 )
 
 from awj_client import AWJClient, RESOURCE_NEW, RESOURCE_CURRENT, MAX_PROC_SLOTS
@@ -19,7 +20,6 @@ from vpu_model import VPUModel
 from vpu_widget import VPUWidget, HOVER_GRACE_MS
 from screens_panel import ScreensPanel
 from log_panel import LogPanel
-from connection_dialog import ConnectionDialog
 from flow_layout import FlowLayout
 from theme import PALETTE
 
@@ -108,7 +108,7 @@ class MainWindow(QMainWindow):
         self.vpu_container = QWidget()
         self.vpu_flow = FlowLayout(self.vpu_container, margin=2, h_spacing=12, v_spacing=12)
 
-        self.vpu_empty_label = QLabel("Not connected — open connection settings (⚙) to get started")
+        self.vpu_empty_label = QLabel("Not connected — enter the device address and hit Connect to get started")
         self.vpu_empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.vpu_empty_label.setStyleSheet(f"color: {PALETTE['muted']}; padding: 60px;")
         self.vpu_flow.addWidget(self.vpu_empty_label)
@@ -169,6 +169,24 @@ class MainWindow(QMainWindow):
         segment_layout.addWidget(self.btn_current)
         layout.addWidget(segment_box)
 
+        # Connection address (IP/host + port), persisted via QSettings
+        settings = QSettings()
+
+        layout.addWidget(QLabel("Host"))
+        self.ip_input = QLineEdit(settings.value("connection/ip", "127.0.0.1"))
+        self.ip_input.setPlaceholderText("IP address")
+        self.ip_input.setFixedWidth(120)
+        self.ip_input.setToolTip("Device IP address or hostname")
+        layout.addWidget(self.ip_input)
+
+        layout.addWidget(QLabel("Port"))
+        self.port_input = QSpinBox()
+        self.port_input.setRange(1, 65535)
+        self.port_input.setValue(int(settings.value("connection/port", 10606)))
+        self.port_input.setFixedWidth(70)
+        self.port_input.setToolTip("Device AWJ TCP port")
+        layout.addWidget(self.port_input)
+
         # Status pill
         self.status_pill = QFrame()
         self.status_pill.setStyleSheet(f"""
@@ -204,31 +222,28 @@ class MainWindow(QMainWindow):
         self.refresh_button.clicked.connect(self.refresh_data)
         layout.addWidget(self.refresh_button)
 
-        settings_button = QPushButton("⚙")
-        settings_button.setObjectName("ghost")
-        settings_button.setToolTip("Connection settings")
-        settings_button.clicked.connect(self.open_connection_settings)
-        layout.addWidget(settings_button)
-
         return header
 
     # ------------------------------------------------------- Connection
-
-    def open_connection_settings(self):
-        dialog = ConnectionDialog(self.client, self)
-        dialog.exec()
 
     def toggle_connection(self):
         if self.client.is_connected:
             self.client.disconnect()
         else:
+            ip = self.ip_input.text().strip()
+            if not ip:
+                self.status_bar.showMessage("Please enter an IP address")
+                return
+            port = self.port_input.value()
+
             settings = QSettings()
-            ip = settings.value("connection/ip", "127.0.0.1")
-            port = int(settings.value("connection/port", 10606))
+            settings.setValue("connection/ip", ip)
+            settings.setValue("connection/port", port)
+
             self.start_connection(ip, port)
 
     def start_connection(self, ip: str, port: int):
-        """Connect to a device (also called from the connection dialog)."""
+        """Connect to a device."""
         self.connect_button.setEnabled(False)
         self.client.connect_to_device(ip, port)
 
@@ -279,12 +294,10 @@ class MainWindow(QMainWindow):
         """state: None (derive), 'connecting'."""
         if state == "connecting":
             color = PALETTE['amber']
-            text = f"Connecting to {self.client.ip}:{self.client.port}…"
+            text = "Connecting…"
         elif self.client.is_connected:
             color = PALETTE['green']
-            config = "pending" if self.model.resource == RESOURCE_NEW else "current"
-            live = " · live" if self.client.is_live else ""
-            text = f"{self.client.ip}:{self.client.port} · {config} config{live}"
+            text = "Connected"
         else:
             color = PALETTE['red']
             text = "Disconnected"
@@ -313,6 +326,8 @@ class MainWindow(QMainWindow):
         self._repolish(self.connect_button)
         self.connect_button.setEnabled(True)
         self.refresh_button.setEnabled(True)
+        self.ip_input.setEnabled(False)
+        self.port_input.setEnabled(False)
         self._update_status_pill()
         self.status_bar.showMessage("Connected")
         self.reset_session()
@@ -326,6 +341,8 @@ class MainWindow(QMainWindow):
         self._repolish(self.connect_button)
         self.connect_button.setEnabled(True)
         self.refresh_button.setEnabled(False)
+        self.ip_input.setEnabled(True)
+        self.port_input.setEnabled(True)
         self._update_status_pill()
         self.status_bar.showMessage("Disconnected")
         # Leave the last known state visible until the next connect/refresh.
@@ -471,6 +488,7 @@ class MainWindow(QMainWindow):
             self.client.get_screen_optimized(screen_id)
             self.client.get_screen_stereo3d(screen_id)
             self.client.get_screen_region_validity(screen_id)
+            self.client.get_screen_label(screen_id)
 
     @pyqtSlot(str)
     def on_debug_message(self, message: str):
